@@ -79,12 +79,15 @@ cprt_mode:  pop   r9              ; restore r9 with character to type
             ani   MODE_BIT        ; toggle input mode bit
             lbz   cprt_ins        ; default is insert mode
              
-            call  do_typeover     ; overwrite printable character            
+cprt_ovr:   call  do_typeover     ; overwrite printable character            
             lbr   cprt_done       
             
-cprt_ins:   call  do_typein       ; insert printable character            
+cprt_ins:   ghi   rb              ; get current line position
+            smi   MAX_COL         ; check if at maximum
+            lbdf  cprt_ovr        ; if at maximum, type over 
+            call  do_typein       ; insert printable character            
 cprt_done:  pop   rf              ; restore buffer register when done
-            lbr   c_line     
+            lbr   c_line          ; update line
 
                 
 c_esc:      call  o_readkey       ; get control sequence introducer character

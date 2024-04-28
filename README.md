@@ -43,7 +43,6 @@ Elf/OS Kilo Commands
 <tr><td>Ctrl+?</td><td>Show help information</td></tr>
 </table>
 
-
 Elf/OS Kilo Modes
 -----------------
 * **Insert Mode**
@@ -51,7 +50,7 @@ Elf/OS Kilo Modes
   * Enter inserts a new line or splits a line at the cursor
 * **Overwrite Mode** 
   * Characters overwrite existing characters in the text
-  * Enter moved down to the beginning of the next line 
+  * Enter moves down to the beginning of the next line 
 
 Repository Contents
 -------------------
