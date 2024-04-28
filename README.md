@@ -46,8 +46,12 @@ Elf/OS Kilo Commands
 
 Elf/OS Kilo Modes
 -----------------
-
-
+* **Insert Mode**
+  * Characters are inserted into the text
+  * Enter inserts a new line or splits a line at the cursor
+* **Overwrite Mode** 
+  * Characters overwrite existing characters in the text
+  * Enter moved down to the beginning of the next line 
 
 Repository Contents
 -------------------
@@ -64,7 +68,7 @@ Repository Contents
   * bios.inc - Bios definitions from Elf/OS
   * kernel.inc - Kernel definitions from Elf/OS
 * **/bin/**  -- Binary files for Elf/OS kilo editor.
-
+  * kilo.elfos - Elf/OS binary file for the Elf/OS kilo editor
 
 
 License Information
@@ -79,7 +83,7 @@ Any company, product, or services names may be trademarks or services marks of o
 
 All libraries used in this code are copyright their respective authors.
 
-This code is based on a Elf/OS code libraries written by Mike Riley and assembled with the RcAsm assembler also written by Mike Riley.
+This code is based on a Elf/OS kernel written by Mike Riley and created with the Asm/02 assembler and Link/02 linker also written by Mike Riley.
 
 Elf/OS 
 Copyright (c) 2004-2024 by Mike Riley
