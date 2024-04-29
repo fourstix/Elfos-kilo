@@ -76,13 +76,15 @@ Text Limits
 * File size is limited to available memory
 * Tabs are defined as 4 character tab stops (1, 5, 9, etc.)
 
-Keys Characters
----------------
-These key character definitions follow the VT102 terminal specification.  In the table below,
-ESC is the Escape control character, ASCII 27, hex value $1B. 
+Key Character Sequences
+-----------------------
+These key character sequences follow the VT102 terminal specification.  In the table below,
+ESC is the Escape control character, ASCII 27, hex value $1B.  Should one of these keys not
+behave as expected, you may need to configure your terminal program to return the expected
+key character sequence. Note that the Delete key can have either one of two possible sequences.
 
 <table>
-<tr><th>Key</th><th>Characters</th></tr>
+<tr><th>Key</th><th>Character Sequence</th></tr>
 <tr><td>Up (Arrow)</td><td>ESC[A</td></tr>
 <tr><td>Down (Arrow)</td><td>ESC[B</td></tr>
 <tr><td>Right (Arrow)</td><td>ESC[C</td></tr>
@@ -94,10 +96,10 @@ ESC is the Escape control character, ASCII 27, hex value $1B.
 <tr><td>End</td><td>ESC[4~</td></tr>
 <tr><td>PgUp</td><td>ESC[5~</td></tr>
 <tr><td>PgDn</td><td>ESC[6~</td></tr>
-<tr><td>Backspace</td><td>Ctrl+H ($08) </td></tr>
-<tr><td>Tab</td><td>Ctrl+I ($09) </td></tr>
+<tr><td>Backspace</td><td>Ctrl+H ($08)</td></tr>
+<tr><td>Tab</td><td>Ctrl+I ($09)</td></tr>
 <tr><td>Shift+Tab</td><td>ESC[Z</td></tr>
-<tr><td>Enter</td><td>Ctrl+M ($0D) </td></tr>
+<tr><td>Enter</td><td>Ctrl+M ($0D)</td></tr>
 </table>
 
 Repository Contents
