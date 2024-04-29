@@ -47,10 +47,34 @@ Elf/OS Kilo Modes
 -----------------
 * **Insert Mode**
   * Characters are inserted into the text
-  * Enter inserts a new line or splits a line at the cursor
+  * Enter inserts a new line at the beginning or end of a line
+  * Enter splits a line at the cursor inside a line
+  * Delete at the end of a line joins the current line with next line 
+  * Backspace at the beginning of an empty line deletes the line
+  * Split (Ctrl-\) can also be used to insert lines or split a line
+  * Join (Ctrl-J) can also be used to join lines
+   
 * **Overwrite Mode** 
   * Characters overwrite existing characters in the text
-  * Enter moves down to the beginning of the next line 
+  * Enter moves down to the beginning of the next line
+  * Delete and backspace do not delete empty lines automatically 
+  * Use Split (Ctrl-\) at the beginning or end of a line to insert an empty line
+  * Use Split (Ctrl-\) to explicitly split a line at the cursor inside a line
+  * Use Join (Ctrl-J) to explicitly join lines
+  * Use Cut (Ctrl-X) to delete a line (and copy into the clip board)
+
+Copy, Cut & Paste
+-----------------
+* Use Copy (Ctrl-C) to copy a line into the clip board 
+* Use Cut (Ctrl-X) to delete a line and copy into the clip board 
+* Use Paste (Ctrl-V) to paste a line from the clip board and insert above the current line
+  
+Text Limits
+-----------
+* Lines can have up to 124 characters per line
+* A file can have up to 65,535 lines 
+* File size is limited to available memory
+* Tabs are defined as 4 character tab stops (1, 5, 9, etc.)
 
 Repository Contents
 -------------------
