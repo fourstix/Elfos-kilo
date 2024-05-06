@@ -111,12 +111,20 @@ old_file:   call  find_eob        ; get the number of lines into r8
             call  put_line_buffer
             
             ;------ Set up default status msg
-            call  kilo_status  
-            call  home_cursor     ; set cursor position for home
+            call  kilo_status     ; set up initial sttus message 
+          
             call  clear_screen    ; clear the screen
-            
             call  refresh_screen  ; print buffer to screen
 
+            call  o_inmsg
+            db 27,'[?25l',0       ; hide cursor        
+            call  prt_status      ; print status line
+            call  home_cursor     ; set cursor position in memory
+            call  o_inmsg
+              db 27,'[H',0        ; home cursor on scren
+            call  o_inmsg
+              db 27,'[?25h',0     ; show cursor        
+              
             pop   rc
             pop   rd
             pop   rf
@@ -897,6 +905,7 @@ ms_size:    phi   rb              ; set rb.1 to new size
             ; Parameters: (None)
             ; Uses: 
             ;   rd - line pointer
+            ;   rc.0 - line counter
             ; Returns: (None)
             ;-------------------------------------------------------            
             proc  refresh_screen
@@ -913,9 +922,6 @@ ms_size:    phi   rb              ; set rb.1 to new size
             call  o_inmsg
               db 27,'[H',0        ; home cursor
 
-            call  o_inmsg
-              db 27,'[2K',0       ; erase top line
-
             call  getcurln          
             push  r8              ; save current line for later
             
@@ -927,7 +933,10 @@ ms_size:    phi   rb              ; set rb.1 to new size
 
             call  get_col_offset  ; get the column offset into rc.1
             
-prt_lines:  ghi   rc              ; get column offset
+prt_lines:  call  o_inmsg
+              db 27,'[2K',0       ; erase line
+
+            ghi   rc              ; get column offset
             adi   2               ; add two for the CRLF at eol
             str   r2              ; save column offset +2  into M(X)
             ldn   ra              ; get size of line
@@ -971,18 +980,16 @@ ln_skp:     lda   ra              ; ra points to size, so get size
 
 ln_cont:    inc   r8              ; add one to current line value
 
-            call  o_inmsg
-              db 27,'[2K',0       ; erase next line
-            
             dec   rc              ; count down
             glo   rc              ; check counter
             lbnz  prt_lines       ; if zero done with text buffer  
+
+rf_done:    
+        
 #ifdef KILO_DEBUG
-rf_done:    call  prt_status_dbg
-#else 
-rf_done:    call  kilo_status     ; update status message  
-            call  prt_status
+            call  prt_status_dbg  ; print debug status each time
 #endif
+
             call  get_cursor      ; restore cursor
             call  move_cursor     ; position cursor
                 
@@ -1000,7 +1007,7 @@ rf_err:     ldi   0               ; if negative, set length to zero
 rf_size:    phi   rb              ; save line size in rb.1
             load  rf, e_state     ; get editor state and clear refresh flag
             ldn   rf
-            ani   REFRESH_MASK    ; clear refresh bit
+            ani   REFRESH_MASK    ; clear refresh bit and status bit
             str   rf              ; save back in memory 
 
             pop   rd              ; restore registers used
@@ -2168,15 +2175,13 @@ pad_done:   ldi   13            ; write CR (10)
             ; Uses:
             ;   rf - buffer pointer
             ;   rd - integer value
+            ;   rc - length of file name
             ; Returns:
-            ;   DF = 1 if yes 
-            ;   DF = 0 if no 
             ;-------------------------------------------------------
             proc  kilo_status
             push  rf
             push  rd
             push  rc 
-            push  r9
             
             ;------ save prompt comes first
             load  rf, save_msg
@@ -2187,46 +2192,26 @@ ds_prompt:  lda   rf
             inc   rd
             lbr   ds_prompt
             
-ds_state:   ldi   ' '             ; pad with space
-            str   rd
-            inc   rd
-
-            load  rf, e_state     ; check input mode bit
+ds_state:   load  rf, e_state     ; check input mode bit
             ldn   rf              ; get editor state byte
             ani   MODE_BIT
-            lbz  ds_insmode       ; default is insert
+            lbz   ds_insmode      ; default is insert mode
             load  rf, ds_over     ; set over-write message
             lbr   ds_mode
             
 ds_insmode: load  rf, ds_insert   ; set insert message 
             
 ds_mode:    lda   rf 
-            lbz   ds_newfl      
+            lbz   ds_fname      
             str   rd              ; copy input mode msg into buffer
             inc   rd
             lbr   ds_mode
-        
-ds_newfl:   load  rf, e_state     ; check new file bit
-            ldn   rf              ; get editor state byte
-            ani   NEWFILE_BIT     ; zero out all but new file bit
-            lbz   ds_fname        ; if bit is zero, skip new file message       
-            
-            load  rf, ds_newfile  ; show new file message
-ds_newloop: lda   rf 
-            lbz   ds_newpad      
-            str   rd              ; copy new file msg into buffer
-            inc   rd
-            lbr   ds_newloop
-
-ds_newpad:  ldi   ' '             ; pad with space after new file message
-            str   rd
-            inc   rd
-                      
+                            
 ds_fname:   load  rf, fname       ; copy filename into status message 
             ldi   20
             plo   rc              ; limit to 20 characters
 ds_fnloop:  lda   rf        
-            lbz   ds_numline      ; quit if end of string
+            lbz   ds_newfile      ; quit if end of string
             str   rd              ; put character in string
             inc   rd
             dec   rc              ; count down
@@ -2234,48 +2219,31 @@ ds_fnloop:  lda   rf
             lbnz  ds_fnloop       ; keep going until count exhausted
               
             
-ds_numline: ldi   ' '             ; add space after file name
-            str   rd
-            inc   rd
+ds_newfile: load  rf, e_state     ; check new file bit
+            ldn   rf              ; get editor state byte
+            ani   NEWFILE_BIT     ; zero out all but new file bit
+            lbz   ds_done         ; if bit is zero, skip new file message       
             
-            push  rd              ; save destination pointer on the stack
-            call  get_num_lines   ; get the max number of lines
-            copy  r9, rd          ; copy max lines for conversion           
-            load  rf, num_buf
-            call  f_uintout
-            ldi   0               ; make sure null at end of string
-            str   rf    
-            pop   rd              ; restore destination pointer
-
-            load  rf, num_buf    ; copy lines count into status message 
-ds_numbuf:  lda   rf 
-            lbz   ds_lcount       ; copy until we reach null at end of string
-            str   rd
+            load  rf, ds_newmsg   ; show new file message
+ds_newloop: lda   rf 
+            lbz   ds_done      
+            str   rd              ; copy new file msg into buffer
             inc   rd
-            lbr   ds_numbuf         
-
-ds_lcount:  load  rf, ds_lines    ; copy lines label into status message 
-ds_lnum:    lda   rf 
-            lbz   ds_done       ; copy until we reach null at end of string
-            str   rd
-            inc   rd
-            lbr   ds_lnum         
-
-
-ds_done:    str   rd              ; make sure string ends in null
+            lbr   ds_newloop
+            
+ds_done:    ldi   0
+            str   rd              ; make sure string ends in null
 
             load  rf, work_buf    ; set status message to default message  
             call  set_status      ; set the status message
        
-            pop   r9              ; restore registers
-            pop   rc
+            pop   rc              ; restore registers
             pop   rd
             pop   rf 
             return 
-ds_insert:    db '[Ins]  ',0
-ds_over:      db '_Over_ ',0      
-ds_newfile:   db '*New File* ',0
-ds_lines:     db ' Lines ',0 
+ds_insert:    db '[Ins] ',0
+ds_over:      db '_Over_ ',0
+ds_newmsg:    db ' (New)',0
             endp
             
 ; *******************************************************************
@@ -2414,9 +2382,9 @@ cfn_bad:    ldi   0               ; signal not valid
             ;-------------------------------------------------------            
             proc  save_msg
 #ifdef  KILO_HELP            
-save_txt:     db  '^Q=Quit ^S=Save ^Y=SaveAs ^?=Help',0
+save_txt:     db  '^Q=Quit ^S=Save ^Y=SaveAs ^?=Help ',0
 #else
-save_txt:     db  '^Q=Quit ^S=Save ^Y=SaveAs',0
+save_txt:     db  '^Q=Quit ^S=Save ^Y=SaveAs ',0
 #endif
             endp
 

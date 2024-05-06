@@ -40,8 +40,11 @@ Elf/OS Kilo Commands
 <tr><td>Ctrl+Z</td><td>Move to bottom of file</td></tr>
 <tr><td>Ctrl+], Shift+Tab</td><td>Move back to previous tab stop</td></tr>
 <tr><td>Ctrl+\</td><td>Split line at cursor</td></tr>
-<tr><td>Ctrl+?</td><td>Show help information</td></tr>
+<tr><td>Ctrl+?</td><td rowspan="2">Show help information</td></tr>
+<tr><td>Ctrl+_ (See Note)</td>
 </table>
+
+Note:  On older DEC video terminals the Ctrl+_ key combination replaces the Ctrl+? combination key for help.  Some emulators may support one or the other or both.
 
 Elf/OS Kilo Modes
 -----------------
@@ -119,6 +122,14 @@ Repository Contents
 * **/bin/**  -- Binary files for Elf/OS kilo editor.
   * kilo.elfos - Elf/OS binary file for the Elf/OS kilo editor
 
+References
+----------
+* [ANSI Escape Sequences](https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797)
+* [Wikipedia ANSI escape code](https://en.wikipedia.org/wiki/ANSI_escape_code)
+* [VT102 User Guide](https://vt100.net/docs/vt102-ug/)
+* [VT102, VT100 and other DEC Video Terminals](https://vt100.net/)
+* [Build Your Own Text Editor](https://viewsourcecode.org/snaptoken/kilo/index.html)
+* [Antirez Kilo Editor](http://antirez.com/news/108)
 
 License Information
 -------------------
@@ -143,11 +154,14 @@ Copyright (c) 2016-2024 by Salvatore Sanfilippo
 Elf-Elfos-Edit 
 Copyright (c) 2004-2024 by Mike Riley
 
-Asm/02 1802 Assembler
+Asm/02 1802 Assembler 
 Copyright (c) 2004-2024 by Mike Riley
 
-Link/02 1802 Linker
+Link/02 1802 Linker 
 Copyright (c) 2004-2024 by Mike Riley
+
+VT102 User Guide 
+Copyright (c) 1982 by Digital Equipment Corporation
 
 Many thanks to the original authors for making their designs and code available as open source.
  
