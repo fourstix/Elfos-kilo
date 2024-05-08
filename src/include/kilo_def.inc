@@ -60,10 +60,19 @@
 #define MODE_MASK     $DF
 #define NEWFILE_BIT   $10
 #define NEWFILE_MASK  $EF
-
-;---- Mask for clearing dirty and new file bits at same time
+#define STATUS_BIT    $08
+#define STATUS_MASK   $F7
+;---- Mask for clearing dirty and new file bits at same time (file saved)
 #define SAVED_MASK    $6F
+;---- Mask for clearing refresh and status bits at same time (screen updated)
+#define SCREEN_MASK   $B7
 
+
+;-------------------------------------------------------------------------------
+; Software Flow Control Characters
+;-------------------------------------------------------------------------------
+#define XON   17
+#define XOFF  19
 
 ;-------------------------------------------------------------------------------
 ; Utility routines used by kilo editor
@@ -122,7 +131,7 @@
 
             extrn   do_kilo
             extrn   do_home
-            extrn   do_ins
+            extrn   do_mode
             extrn   do_del 
             extrn   do_end
             extrn   do_pgup

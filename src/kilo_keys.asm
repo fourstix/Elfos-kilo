@@ -39,7 +39,10 @@
             ;-------------------------------------------------------       
             proc  do_kilo
             ; reads character until ctrl+q is typed  
-c_loop:     call  o_readkey       ; get a keyvalue 
+c_loop:     ldi   XON             
+            call  o_type          ; send xon to make sure transmission is on
+            
+            call  o_readkey       ; get a keyvalue 
             str   r2              ; save char at M(X)
         
             ; Check for printable or control char
@@ -107,12 +110,15 @@ sq_csi:     call  o_readkey       ; get csi character
             ldx 
             lbr   c_unkn          ; print unknown escape seq message
         
-sq_ok:      irx                   ; get character from stack 
+sq_ok:      ldi   XOFF            
+            call  o_type          ; turn transmission off in case of repeated ANSI sequences
+            
+            irx                   ; get character from stack 
             ldx
             smi   49              ; check for <Esc>[1~ sequence
             lbz   c_home          ; process Home key
             smi   1               ; check for <Esc>[2~ sequence
-            lbz   c_ins           ; process Insert key
+            lbz   c_mode          ; process Insert key
             smi   1               ; check for <Esc>[3~ sequence
             lbz   c_del           ; process Delete key
             smi   1               ; check for <Esc>[4~ sequence
@@ -162,7 +168,7 @@ c_ctrl:     ldx                   ; get control character at M(X)
             smi   1               ; check for Ctrl-N (PgDn)
             lbz   c_pgdn
             smi   1               ; check for Ctrl-O (Overwrite/Insert)  
-            lbz   c_ins
+            lbz   c_mode
             smi   1               ; check for Ctrl-P (PgUp)
             lbz   c_pgup
             smi   1               ; check for Ctrl-Q (Quit)
@@ -241,16 +247,7 @@ c_quit:     call  do_quit         ; check dirty flag and prompt before quitting
 c_home:     call  do_home
             lbr   c_update
 
-c_ins:      push  rf              ; save register
-            load  rf, e_state     ; get editor state byte  
-            ldn   rf            
-            xri   MODE_BIT        ; toggle input mode bit
-            str   rf
-            call  kilo_status     ; update status message
-            call  prt_status
-            call  get_cursor      ; restore cursor
-            call  move_cursor     ; position cursor
-            pop   rf              ; restore register
+c_mode:     call  do_mode          ; toggle the editor mode
             lbr   c_loop
  
 c_del:      call  do_del
@@ -312,7 +309,6 @@ c_dwn:      call  do_down
 c_rght:     call  do_rght
             lbr   c_update
 
-
 c_left:     call  do_left
             lbr   c_update
 
@@ -324,20 +320,32 @@ c_update:   load  rf, e_state     ; check refresh bit
             ldn   rf
             ani   REFRESH_BIT     
             lbz   c_move          ; if no refrsh, just move cursor                        
-c_redraw:   call  o_inmsg
-              db 27,'[2J',0           ; erase display          
-            call  refresh_screen
+c_redraw:   call  refresh_screen
             lbr   c_loop    
 
 c_move:     call  o_inmsg
               db 27,'[?25l',0     ; hide cursor
 #ifdef KILO_DEBUG                  
-            call  prt_status_dbg  ; update the status line              
-#else            
+            call  prt_status_dbg  ; always show debug status line              
+#else 
+            call  o_inmsg         ; reset cursor for move
+              db 27,'[H',0
+
+            load  rf, e_state     ; check refresh bit
+            ldn   rf
+            ani   STATUS_BIT      ; zero out all other bits, but status
+            lbz   cm_cursor       ; if not status update, just move cursor
+            
             call  kilo_status     ; update the status message
-            call  prt_status      ; update the status line              
+            call  prt_status      ; update the status line
+            load  rf, e_state     ; clear status bit after update
+            ldn   rf
+            ani   STATUS_MASK     ; clear bit
+            str   rf              ; save updated editor state byte
+                         
 #endif
-            call  get_cursor
+
+ cm_cursor: call  get_cursor
             call  move_cursor     ; move to new position
             call  o_inmsg
               db 27,'[?25h',0     ; show cursor        
@@ -368,13 +376,26 @@ c_exit:     return
             endp
 
             ;-------------------------------------------------------
-            ; Name: do_ins
+            ; Name: do_mode
             ;
-            ; Handle the action when the Insert key is pressed
+            ; Toggle the editor mode, insert or overwrite
+            ;
+            ; Parameters: (None)
+            ; Uses: 
+            ;   rf - buffer pointer
+            ; Returns: (None)
             ;-------------------------------------------------------                      
-            proc  do_ins
-            call    o_inmsg
-              db 10,13,'<Insert>',0
+            proc  do_mode
+            push  rf              ; save register
+            load  rf, e_state     ; get editor state byte  
+            ldn   rf            
+            xri   MODE_BIT        ; toggle mode mode bit
+            str   rf
+            call  kilo_status     ; update status message for new mode
+            call  prt_status
+            call  get_cursor      ; restore cursor
+            call  move_cursor     ; position cursor
+            pop   rf              ; restore register
             return
             endp
 
@@ -839,6 +860,11 @@ ds_show:    call  set_status      ; show message set previously
             call  get_cursor      ; restore cursor after message
             call  move_cursor     ; position cursor 
             
+            load  rf, e_state     ; set status bit
+            ldn   rf
+            ori   STATUS_BIT      ; set bit to reset status msg after file msg
+            str   rf
+
             irx                   ; get DF value from stack
             ldx 
             shr                   ; Set DF 
@@ -846,8 +872,8 @@ ds_show:    call  set_status      ; show message set previously
             pop   rf              ; restore register 
             return
 clean_msg:    db 'No file changes to save.',0
-saved_msg:    db '*** File Saved. ***',0
-saved_err:    db '*** ERROR Saving File. ***',0
+saved_msg:    db '* File Saved. *',0
+saved_err:    db '* ERROR Saving File. *',0
             endp
 
             ;-------------------------------------------------------
@@ -1113,45 +1139,23 @@ splt_bfore: call  do_insline
             endp
 
             ;-------------------------------------------------------
-            ; Name: do_tab
-            ; Handle the action when the Tab key is pressed
+            ; Name: do_where
+            ; Show the character position in the file
             ;
             ; Parameters:
             ;  rb.1 - current line length
             ;  rb.0 - current character position
             ;  r8 -   current row
-            ; Uses: (None)
+            ; Uses: 
+            ;  r9 -   total number of lines
             ; Returns:
             ;  rb.0 - updated cursor position
             ;-------------------------------------------------------                                                
             proc  do_where
             push  rf              ; save registers
             push  rd
+            push  r9
             
-            call  getcurln        ; get current line index
-            copy  r8, rd          ; copy index for conversion to ask        
-            inc   rd              ; add one to index
-            load  rf, num_buf     
-            call  f_uintout       ; convert to integer ascii string
-            ldi   0               ; make sure null terminated
-            str   rf              
-            
-            load  rd, work_buf    ; set destination pointer to work buffer 
-            load  rf, dw_lntxt    
-dw_lnhdr:   lda   rf              ; copy line header into msg buffer
-            lbz   dw_lnumbr         
-            str   rd
-            inc   rd
-            lbr   dw_lnhdr
-            
-dw_lnumbr:  load  rf, num_buf     
-dw_lnum:    lda   rf              ; copy line number into msg buffer
-            lbz   dw_colmn        
-            str   rd
-            inc   rd
-            lbr   dw_lnum
-
-dw_colmn:   push  rd              ; save msg buffer pointer
             ldi   0               ; set up rd for converting column index
             phi   rd
             glo   rb              ; copy column index for conversion
@@ -1161,21 +1165,76 @@ dw_colmn:   push  rd              ; save msg buffer pointer
             call  f_uintout       ; convert to integer ascii string
             ldi   0               ; make sure null terminated
             str   rf              
-            pop   rd              ; restore msg buffer pointer
-              
-            load  rf, dw_coltxt      
-dw_clmn:    lda   rf              ; copy column label into msg buffer
-            lbz   dw_cnumbr       ; then add column number
+            
+            load  rd, work_buf    ; set destination pointer to work buffer 
+            load  rf, dw_coltxt    
+dw_hdr:     lda   rf              ; copy column header into msg buffer
+            lbz   dw_cnumbr         
             str   rd
             inc   rd
-            lbr   dw_clmn
-            
+            lbr   dw_hdr
+
 dw_cnumbr:  load  rf, num_buf
 dw_cnum:    lda   rf              ; copy column number into msg buffer
-            lbz   dw_show
+            lbz   dw_ln           ; add text before line
             str   rd
             inc   rd
             lbr   dw_cnum
+
+dw_ln:      load  rf, dw_lntxt      
+dw_line:    lda   rf              ; copy line label into msg buffer
+            lbz   dw_lnumbr       ; then add line number
+            str   rd
+            inc   rd
+            lbr   dw_line
+
+
+dw_lnumbr:  push  rd              ; save msg buffer pointer
+            call  getcurln        ; get current line index
+            copy  r8, rd          ; copy index for conversion to ask        
+            inc   rd              ; add one to index
+            load  rf, num_buf     
+            call  f_uintout       ; convert to integer ascii string
+            ldi   0               ; make sure null terminated
+            str   rf              
+            pop   rd              ; restore msg buffer pointer
+            
+            load  rf, num_buf     
+dw_lnum:    lda   rf              ; copy line number into msg buffer
+            lbz   dw_size        
+            str   rd
+            inc   rd
+            lbr   dw_lnum            
+
+dw_size:    load  rf, dw_sztxt      
+dw_sz:      lda   rf              ; copy text into msg buffer
+            lbz   dw_tlines       ; before total lines number
+            str   rd
+            inc   rd
+            lbr   dw_sz
+
+dw_tlines:  push  rd              ; save msg buffer pointer
+            call  get_num_lines   ; get total number of lines
+            copy  r9, rd          ; copy total number for conversion
+            load  rf, num_buf     ; put result in number buffer
+            call  f_uintout       ; convert to integer ascii string
+            ldi   0               ; make sure null terminated
+            str   rf              
+            pop   rd              ; restore msg buffer pointer
+
+dw_tnumbr:  load  rf, num_buf
+dw_tnum:    lda   rf              ; copy total line number into msg buffer
+            lbz   dw_lend         ; add final text after total lines
+            str   rd
+            inc   rd
+            lbr   dw_tnum
+
+dw_lend:    load  rf, dw_lines      
+dw_end:     lda   rf              ; copy text into msg buffer
+            lbz   dw_show         ; then show message
+            str   rd
+            inc   rd
+            lbr   dw_end
 
 dw_show:    ldi   0               ; make sure message ends in null
             str   rd
@@ -1184,12 +1243,20 @@ dw_show:    ldi   0               ; make sure message ends in null
             call  prt_status      
             call  get_cursor      ; restore cursor after status message update
             call  move_cursor
-                            
-            pop   rd              ; restore registers
+
+            load  rf, e_state     ; set status bit
+            ldn   rf
+            ori   STATUS_BIT      ; set bit to reset status after showing msg
+            str   rf
+            
+            pop   r9              ; restore registers
+            pop   rd
             pop   rf
             return
-dw_lntxt:     db 'File Location at Line ',0
-dw_coltxt:    db ' and Column ',0
+dw_coltxt:    db 'Column ',0
+dw_lntxt:     db ', Line ',0
+dw_sztxt:     db ' out of ',0
+dw_lines:     db ' Lines ',0 
             endp
 
             ;-------------------------------------------------------
@@ -1479,6 +1546,12 @@ dj_err:     load  rf, dj_long     ; if error, show status message
             call  prt_status      
             call  get_cursor      ; restore cursor after status message update
             call  move_cursor
+            
+            load  rf, e_state     ; set status bit in editor state
+            ldn   rf
+            ori   STATUS_BIT      ; set bit to reset status msg after error msg
+            str   rf
+            
 dj_none:    stc                   ; set DF to indicate error
 dj_exit:    pop   r9              ; restore register
             return
