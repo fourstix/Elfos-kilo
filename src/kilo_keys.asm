@@ -39,8 +39,12 @@
             ;-------------------------------------------------------       
             proc  do_kilo
             ; reads character until ctrl+q is typed  
-c_loop:     ldi   XON             
+c_loop:
+     
+#ifdef  KILO_FLOW
+            ldi   XON             
             call  o_type          ; send xon to make sure transmission is on
+#endif            
             
             call  o_readkey       ; get a keyvalue 
             str   r2              ; save char at M(X)
@@ -79,6 +83,10 @@ c_prt:      ldx                   ; get printable character at M(X)
 cprt_mode:  pop   r9              ; restore r9 with character to type
             load  rf, e_state     ; get editor state byte  
             ldn   rf
+            ani   ERROR_BIT       ; check for error
+            lbnz   c_error        ; if error, exit with message    
+            
+            ldn   rf              ; get editor state byte again
             ani   MODE_BIT        ; toggle input mode bit
             lbz   cprt_ins        ; default is insert mode
              
@@ -110,9 +118,12 @@ sq_csi:     call  o_readkey       ; get csi character
             ldx 
             lbr   c_unkn          ; print unknown escape seq message
         
-sq_ok:      ldi   XOFF            
+sq_ok:
+      
+#ifdef  KILO_FLOW
+            ldi   XOFF            
             call  o_type          ; turn transmission off in case of repeated ANSI sequences
-            
+#endif            
             irx                   ; get character from stack 
             ldx
             smi   49              ; check for <Esc>[1~ sequence
@@ -317,8 +328,12 @@ c_bktab:    call  do_bktab
 
             ;---- check refresh flag and update screen or move cursor
 c_update:   load  rf, e_state     ; check refresh bit
-            ldn   rf
-            ani   REFRESH_BIT     
+            ldn   rf              ; get state byte
+            ani   ERROR_BIT       ; check for error
+            lbnz   c_error        ; if error, show message and exit       
+
+            ldn   rf              ; get state byte again
+            ani   REFRESH_BIT     ; check for refresh
             lbz   c_move          ; if no refrsh, just move cursor                        
 c_redraw:   call  refresh_screen
             lbr   c_loop    
@@ -353,8 +368,12 @@ c_move:     call  o_inmsg
 
 c_line:     call  refresh_line    ; update line on screen
             lbr   c_update
-            
-c_exit:     return            
+
+c_error:    load  rf, mem_err     ; show out of memory error
+            call  do_confirm
+              
+c_exit:     return
+mem_err:      db '*** Error: Out of Memory ***',0            
             endp   
                            
             
@@ -989,6 +1008,7 @@ dk_skip:    pop   r9
           
             load  rf, ins_blank   ; set rf to insert blank line
             call  insert_line
+            lbdf  dins_err
           
             load  rf, e_state     ; set refresh bit
             ldn   rf              ; get editor state byte
@@ -998,8 +1018,15 @@ dk_skip:    pop   r9
             ;---- increment total number of lines in the file
             call  inc_num_lines
             
-            pop   rf              ; restore registers
+dins_exit:  pop   rf              ; restore registers
             return
+            
+dins_err:   load  rf, e_state     ; set refresh bit
+            ldn   rf              ; get editor state byte
+            ori   ERROR_BIT       ; set error bit to exit     
+            str   rf
+            lbr   dins_exit       ; exit with status bit set
+            
 ins_blank:    db 13,10,0            
             endp
 

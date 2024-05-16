@@ -29,6 +29,11 @@
 ; #define  KILO_DEBUG  1
 
 ;-------------------------------------------------------------------------------
+; Uncomment to enable flow control (Xon/Xoff) 
+;-------------------------------------------------------------------------------
+#define  KILO_FLOW   1
+
+;-------------------------------------------------------------------------------
 ; Comment out to remove Help information (about 1K in size) 
 ;-------------------------------------------------------------------------------
 #define  KILO_HELP  1
@@ -62,17 +67,24 @@
 #define NEWFILE_MASK  $EF
 #define STATUS_BIT    $08
 #define STATUS_MASK   $F7
+#define ERROR_BIT     $01
+#define ERROR_MASK    $FE
+
 ;---- Mask for clearing dirty and new file bits at same time (file saved)
 #define SAVED_MASK    $6F
 ;---- Mask for clearing refresh and status bits at same time (screen updated)
 #define SCREEN_MASK   $B7
 
 
+#ifdef  KILO_FLOW
+
 ;-------------------------------------------------------------------------------
 ; Software Flow Control Characters
 ;-------------------------------------------------------------------------------
 #define XON   17
 #define XOFF  19
+
+#endif
 
 ;-------------------------------------------------------------------------------
 ; Utility routines used by kilo editor
@@ -116,7 +128,7 @@
             extrn   prt_find_dbg
             extrn   kilo_status
             extrn   set_dirty
-            extrn   clear_file_bits
+            extrn   clr_file_bits
             extrn   is_dirty
             extrn   is_fnchar
             extrn   split_line
@@ -124,6 +136,7 @@
             extrn   is_eof
             extrn   found_screen
             extrn   clip_brd
+            extrn   set_status_cmd
 
 ;-------------------------------------------------------------------------------
 ; Key handler routines used by kilo editor
@@ -181,3 +194,5 @@
             extrn   delete_line
             extrn   update_line
             extrn   find_string
+            extrn   set_page
+            extrn   check_page
