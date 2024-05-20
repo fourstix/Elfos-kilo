@@ -102,8 +102,21 @@ cprt_done:  pop   rf              ; restore buffer register when done
 
                 
 c_esc:      call  o_readkey       ; get control sequence introducer character
+            str   r2              ; save character at M(X)  
             smi   '['             ; check for csi escape sequence
-            lbnz  c_unkn          ; Anything but <Esc>[ is an unknown sequence
+            lbz   sq_csi          ; <Esc>[ is a valid ANSI sequence
+
+            ldx                   ; get character and check for VT-52 arrows
+            smi   'A'             ; check for <ESC>A VT-52 sequence
+            lbnf  c_unkn          ; anything below 'A' is unknown
+            lbz   c_up            ; process Up Arrow key            
+            smi   1               ; check for <Esc>B
+            lbz   c_dwn           ; process Down Arrow key
+            smi   1               ; check for <Esc>C
+            lbz   c_rght          ; process Right Arrow key  
+            smi   1               ; check for <Esc>D
+            lbz   c_left          ; process Left Arrow key
+            lbnz  c_unkn          ; Anything else is an unknown sequence
         
 sq_csi:     call  o_readkey       ; get csi character
             stxd                  ; save character on stack
