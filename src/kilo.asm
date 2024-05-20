@@ -55,21 +55,26 @@ fnamelp:    lda   ra              ; get byte from filename
             
             load  rf,fname        ; point to filename storage
             ldn   rf              ; get byte from argument
-            lbnz  good            ; jump if filename given
+            lbnz  k_good          ; jump if filename given
 
             call  o_inmsg         ; otherwise display usage message
               db  'Usage: kilo filename',10,13,0
             return                ; and return to os
 
      
-good:       call  begin_kilo  
+k_good:     call  begin_kilo  
+            lbdf  k_error         ; Just show error msg   
                           
             ;----- read and process keys until Ctrl+Q is pressed  
             call  do_kilo
              
-exit:       call  end_kilo
+k_exit:     call  end_kilo
         
             return                ; return to Elf/OS
+
+k_error:    call  o_inmsg         ; show file error message
+              db 'File too large for memory!',10,13,0
+            lbr   k_exit          ; and end program
             
             ;------ define end of execution block
             end     start

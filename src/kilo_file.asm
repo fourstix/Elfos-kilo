@@ -34,6 +34,8 @@
             extrn   readln
             extrn   readbyte
             extrn   k_char
+            extrn   pageLimit
+
             
             ;-------------------------------------------------------
             ; Name: find_eob
@@ -41,6 +43,8 @@
             ; Find the end of the text buffer
             ;
             ; Returns: 
+            ;   DF = 0, buffer within memory limit
+            ;   DF = 1, out of memory (buffer overflow)
             ;   r8 - Line number     
             ;   ra - pointer to line at end of buffer
             ;-------------------------------------------------------       
@@ -62,6 +66,7 @@ feob_lp:    lda   ra            ; get count
             inc   r8            ; increment line count
             lbr   feob_lp
 feob_done:  dec   ra            ; move back to end of buffer byte
+            call  check_page    ; check for out of memory to set flag
             return              ; and return
             endp
 
@@ -256,6 +261,7 @@ fs_exit:    pop   r9              ; restore registers
             ; Uses:
             ;   rf - pointer to text bytes
             ;   rd - pointer to file descripter
+            ;   ra - check page parameter
             ;   rc.0 - byte count
             ;   r7.0 - flags register
             ; Returns:
@@ -266,6 +272,7 @@ fs_exit:    pop   r9              ; restore registers
             push  rf            ; save registers used    
             push  rd
             push  rc
+            push  ra
             push  r7  
 
             load  rf, fname
@@ -304,7 +311,10 @@ loadnz:     ldi   13            ; write cr/lf to buffer
             ghi   rf
             adci   0
             phi   rf
-            lbr   loadlp        ; jump to load next line
+            copy  rf, ra        ; check the current page
+            call  check_page    ; check that page is within memory
+            lbdf  loaddn        ; if out of memory, terminate
+            lbr   loadlp
 
 loadeof:    pop   rf            ; recover buffer address
             glo   rc            ; see if bytes were read
@@ -330,6 +340,7 @@ loaddn:     ldi   0             ; write termination
             call  o_close       ; close the file
             clc                 ; clear the DF flag
 new_kfile:  pop   r7            ; restore registers
+            pop   ra
             pop   rc
             pop   rd
             pop   rf
@@ -469,8 +480,8 @@ save_err:   call  o_close       ; attempt to close open file
             stc                 ; set DF=1 for error
             lbr   save_exit     ; exit with error
             
-savedn:     call  o_close           ; close the file
-            call  clear_file_bits   ; clear the dirty flag and new flag bits
+savedn:     call  o_close       ; close the file
+            call  clr_file_bits ; clear the dirty flag and new flag bits
             clc                 ; clear DF flag for successful return
 save_exit:  pop   r7            ; restore registers used
             pop   rc
@@ -495,6 +506,7 @@ save_exit:  pop   r7            ; restore registers used
             ;   r9 - source pointer
             ;
             ; Returns:
+            ;   DF = 1, out of memory error
             ;   r8 - new current line number
             ;-------------------------------------------------------                       
             proc  insert_line
@@ -512,6 +524,7 @@ insertlp1:  inc   rc            ; increment count
             glo   rc            ; get count + 1 for size byte
             stxd                ; and save it
             call  find_eob      ; find end of buffer
+            lbdf  ins_err       ; if out of memory, exit with error
             glo   rc            ; add in count to get destination
             str   r2
             glo   ra
@@ -559,8 +572,8 @@ insertlp3:  glo   rc            ; get count
 insertdn:   call  getcurln      ; get current line number
             
             call  set_dirty     ; set the dirty bit after buffer change            
-
-            pop   r9            ; restore registers used
+            clc                 ; show success (DF = 0)  
+ins_err:    pop   r9            ; restore registers used
             pop   rc
             pop   rd
             return              ; return to caller
@@ -647,6 +660,66 @@ killquit:   call  getcurln      ; set r8 back to current line
             clc                 ; clear DF to indicate line updated
             return
             endp
+
+
+            ;-------------------------------------------------------
+            ; Name: set_page
+            ;
+            ; Set the memory limit one page below the heap
+            ;
+            ; Parameters: (None)
+            ; Uses:
+            ;   rf - buffer pointer
+            ;   rd - memory address
+            ; Returns: (None) 
+            ;-------------------------------------------------------
+            proc  set_page
+            push  rf          ; save registers
+            push  rd  
+            
+            load  rf, K_HEAP    ; point to address for heap
+            
+            lda   rf            ; get hi byte of address
+            phi   rd            ; put in rd
+            lda   rf            ; get lo byte of address
+            plo   rd            ; rd points to bottom of heap
+            dec   rd            ; free memory is one byte below heap
+
+            load  rf, pageLimit ; point to memory limit variable
+            
+            ghi   rd            ; get page value of memory
+            smi   1             ; limit is one page below memory
+            str   rf            ; save limit in memory
+            
+            pop   rd          ; restore registers
+            pop   rf
+            return
+            endp
+
+            ;-------------------------------------------------------
+            ; Name: check_page
+            ;
+            ; Check text buffer against the memory page limitp
+            ;
+            ; Parameters:
+            ;   ra - pointer to end of text buffer
+            ; Uses:
+            ;   rf - buffer pointer
+            ; Returns: 
+            ;   DF = 1, memory limit reached (page >= limit)
+            ;   DF = 0, withim limit (page < limit)
+            ;-------------------------------------------------------
+            proc  check_page
+            push  rf
+            load  rf, pageLimit   ; get memory limit
+            ldn   rf              ; load memory limit value
+            str   r2              ; put limit in M(X) 
+            
+            ghi   ra              ; get page for end of text buffer
+            sm                    ; subtract limit from current page 
+            pop   rf
+            return
+            endp
             
             ; ***************************************
             ; ***      File and Data Buffers      ***
@@ -665,6 +738,10 @@ killquit:   call  getcurln      ; set r8 back to current line
               dw      0,0
               db      0,0,0,0
             endp  
+
+            proc  pageLimit
+              db      0         ; one page below heap
+            endp
   
             proc  curline
               dw      0         ; current line variable

@@ -82,28 +82,35 @@ Text Limits
 Key Character Sequences
 -----------------------
 These key character sequences follow the VT102 terminal specification.  In the table below,
-ESC is the Escape control character, ASCII 27, hex value $1B.  Should one of these keys not
+{ESC} is the Escape control character, ASCII 27, hex value $1B.  Should one of these keys not
 behave as expected, you may need to configure your terminal program to return the expected
 key character sequence. Note that the Delete key can have either one of two possible sequences.
 
 <table>
 <tr><th>Key</th><th>Character Sequence</th></tr>
-<tr><td>Up (Arrow)</td><td>ESC[A</td></tr>
-<tr><td>Down (Arrow)</td><td>ESC[B</td></tr>
-<tr><td>Right (Arrow)</td><td>ESC[C</td></tr>
-<tr><td>Left (Arrow)</td><td>ESC[D</td></tr>
-<tr><td>Home</td><td>ESC[1~</td></tr>
-<tr><td>Insert</td><td>ESC[2~</td></tr>
-<tr><td rowspan="2">Delete</td><td>ESC[3~</td></tr>
+<tr><td rowspan="2">Up (Arrow)</td><td>{ESC}[A</td></tr>
+<tr><td>{ESC}A (See Note)</td></tr>
+<tr><td rowspan="2">Down (Arrow)</td><td>{ESC}[B</td></tr>
+<tr><td>{ESC}B (See Note)</td></tr>
+<tr><td rowspan="2">Right (Arrow)</td><td>{ESC}[C</td></tr>
+<tr><td>{ESC}C (See Note)</td></tr>
+<tr><td rowspan="2">Left (Arrow)</td><td>{ESC}[D</td></tr>
+<tr><td>{ESC}D (See Note)</td></tr>
+<tr><td>Home</td><td>{ESC}[1~</td></tr>
+<tr><td>Insert</td><td>{ESC}[2~</td></tr>
+<tr><td rowspan="2">Delete</td><td>{ESC}[3~</td></tr>
 <tr><td>DEL ($7F)</td></tr>
-<tr><td>End</td><td>ESC[4~</td></tr>
-<tr><td>PgUp</td><td>ESC[5~</td></tr>
-<tr><td>PgDn</td><td>ESC[6~</td></tr>
+<tr><td>End</td><td>{ESC}[4~</td></tr>
+<tr><td>PgUp</td><td>{ESC}[5~</td></tr>
+<tr><td>PgDn</td><td>{ESC}[6~</td></tr>
 <tr><td>Backspace</td><td>Ctrl+H ($08)</td></tr>
 <tr><td>Tab</td><td>Ctrl+I ($09)</td></tr>
-<tr><td>Shift+Tab</td><td>ESC[Z</td></tr>
+<tr><td>Shift+Tab</td><td>{ESC}[Z</td></tr>
 <tr><td>Enter</td><td>Ctrl+M ($0D)</td></tr>
 </table>
+
+Note:  On some older DEC video terminals, the arrow keys send {ESC}A through 
+{ESC}D instead of the ANSI sequences {ESC}[A through {ESC}[D.
 
 Repository Contents
 -------------------

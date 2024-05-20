@@ -37,6 +37,7 @@
             extrn   temp_buf
             extrn   status_msg
             extrn   save_msg
+            extrn   status_cmd
             
 ; *******************************************************************
 ; ***                    Window Utilities                         ***
@@ -87,7 +88,11 @@
 
             ;------ initialize screen window height and width
             call  set_window_size
-                        
+
+            call  set_status_cmd  ; set the ANSI command for status location
+                                    
+            call  set_page        ; set the memory limit
+                                    
             ;------ Load file to edit
             call  load_buffer     ; file text buffer
             lbnf  old_file        ; if file exists no new file message
@@ -98,6 +103,7 @@
             str   rf              ; save editor state in memory            
             
 old_file:   call  find_eob        ; get the number of lines into r8
+            lbdf  bk_err          ; if out of memory, exit immediately
             call  set_num_lines   ; set the maximum line value in memory     
               
             ldi   0               ; set line counter to first line
@@ -124,11 +130,15 @@ old_file:   call  find_eob        ; get the number of lines into r8
               db 27,'[H',0        ; home cursor on scren
             call  o_inmsg
               db 27,'[?25h',0     ; show cursor        
-              
-            pop   rc
+            clc                   ; return without error  
+            
+bk_exit:    pop   rc              ; restore registers
             pop   rd
             pop   rf
             return
+            
+bk_err:     stc                   ; return with error 
+            lbr   bk_exit
             endp
 
 
@@ -213,7 +223,7 @@ rd_done:    load    r7, size_h    ; set memory byte pointer
             str     r7            ; save in memory
 
             load    r7, size_w    ; set memory byte pointer
-            load    rf, pos_x     ; convert y value string to byte
+            load    rf, pos_x     ; convert x value string to byte
             call    f_atoi        
             glo     rd            ; rd.0 contains integer value of x
             str     r7            ; save in memory
@@ -1260,7 +1270,7 @@ pos_y:        db 0,0,0,0,0
             endp
 
             ;-------------------------------------------------------
-            ; Name: clear_file_bits
+            ; Name: clr_file_bits
             ;
             ; Clear the dirty bit and new file bit in the editor 
             ; state after a file is saved.
@@ -1270,7 +1280,7 @@ pos_y:        db 0,0,0,0,0
             ;   rf - buffer pointer 
             ; Returns: (None)
             ;-------------------------------------------------------            
-            proc  clear_file_bits
+            proc  clr_file_bits
             push  rf              ; save rf
             load  rf, e_state     ; get editor state byte  
             ldn   rf
@@ -1665,9 +1675,12 @@ ed_state:    db    0           ; editor state bits
             push  r9
             push  r8              ; save current line
           
-            call  o_inmsg
-              db 27,'[25;1H',0    ; set cursor for status line
-                        
+;            call  o_inmsg
+;              db 27,'[25;1H',0    ; set cursor for status line
+
+            load  rf, status_cmd  ; move cursor down to status line
+            call  o_msg
+                          
             copy  rb, rd          ; copy current line for conversion           
             load  rf, rb_hex
             call  f_hexout4
@@ -1959,8 +1972,11 @@ dbg_end:     db  27,'*',27,'[0m',0
             proc  prt_status
             push  rf
           
-            call  o_inmsg         ; set cursor for status line
-              db 27,'[25;1H',0
+            load  rf, status_cmd  ; move cursor to status line
+            call  o_msg
+
+;            call  o_inmsg         ; set cursor for status line
+;              db 27,'[25;1H',0
 
             call  o_inmsg         ; set text colors to white on blue
               db 27,'[37;44m',0
@@ -2376,6 +2392,60 @@ cfn_bad:    ldi   0               ; signal not valid
 
 
             ;-------------------------------------------------------
+            ; Name: set_status_cmd
+            ;
+            ; Set the ANSI status line cursor command in the buffer
+            ;
+            ; Parameters:
+            ; Uses:
+            ;   rd - number to convert 
+            ;   r9 - screen height and width
+            ;   rf - buffer pointer
+            ;-------------------------------------------------------            
+            proc  set_status_cmd
+            push  rf                  ; save registers
+            push  rd
+            push  r9
+            
+            call  window_size         ; get window size values in r9
+            
+            load  rf, status_cmd      ; write to status command buffer
+            ldi   27                  ; write escape to ANSI command
+            str   rf                  
+            inc   rf
+            ldi   '['                 ; write CSI character to ANSI command
+            str   rf
+            inc   rf
+            ldi   0                   ; set up for integer conversion
+            phi   rd                  ; height is single byte value
+            ghi   r9                  ; get window height value
+            adi   01                  ; ANSI is one based, adjust for last line
+            plo   rd                  ; rd now has integer value for status line
+            call  f_uintout           ; convert height to ASCII string
+            
+            ldi   ';'                 ; print rest of ANSI command string
+            str   rf
+            inc   rf
+            ldi   '1'                 ; cursor at column one of status line
+            str   rf
+            inc   rf
+            ldi   'H'                 ; H ends the ANSI cursor command
+            str   rf
+            inc   rf
+            ldi   0                   ; print null at end of command string
+            str   rf            
+             
+            pop   r9                  ; restore registers
+            pop   rd
+            pop   rf
+            return 
+            endp
+            
+; *******************************************************************
+; ***                   Strings and Buffers                       ***
+; *******************************************************************
+
+            ;-------------------------------------------------------
             ; Name: save_msg
             ;
             ; Status message to save files. 
@@ -2387,11 +2457,6 @@ save_txt:     db  '^Q=Quit ^S=Save ^Y=SaveAs ^?=Help ',0
 save_txt:     db  '^Q=Quit ^S=Save ^Y=SaveAs ',0
 #endif
             endp
-
-
-; *******************************************************************
-; ***                         Buffers                             ***
-; *******************************************************************
 
             ;-------------------------------------------------------
             ; Name: status_msg
@@ -2437,4 +2502,13 @@ clp_brd:       ds  128
             ;-------------------------------------------------------            
             proc  num_buf
 nmbr_buf:     db 0,0,0,0,0,0
+            endp
+
+            ;-------------------------------------------------------
+            ; Name: status_cmd
+            ;
+            ; Buffer for ANSI status cursor command
+            ;-------------------------------------------------------            
+            proc  status_cmd
+stat_cmd:     ds 10
             endp
