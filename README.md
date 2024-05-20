@@ -105,12 +105,12 @@ key character sequence. Note that the Delete key can have either one of two poss
 <tr><td>PgDn</td><td>{ESC}[6~</td></tr>
 <tr><td>Backspace</td><td>Ctrl+H ($08)</td></tr>
 <tr><td>Tab</td><td>Ctrl+I ($09)</td></tr>
-<tr><td>Shift+Tab</td><td>\<ESC\>[Z</td></tr>
+<tr><td>Shift+Tab</td><td>{ESC}[Z</td></tr>
 <tr><td>Enter</td><td>Ctrl+M ($0D)</td></tr>
 </table>
 
-Note:  On some older DEC video terminals, the arrow keys send /<ESC/>A through 
-/<ESC/>D instead of the ANSI sequences.  These sequences are also supported.
+Note:  On some older DEC video terminals, the arrow keys send {ESC}A through 
+{ESC}D instead of the ANSI sequences {ESC}[A through {ESC}[D.
 
 Repository Contents
 -------------------
