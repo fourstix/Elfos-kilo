@@ -60,7 +60,14 @@ chk_c:      ldi   27              ; check for escape char immediately
             lbnf  c_ctrl          ; jump if not printable
             smi   95              ; check for DEL
             lbz   c_ctrl          ; 127 is a control char
-        
+
+            load  rf, c_rpt       ; get repeated character
+            ldn   rf          
+            sm                    ; check for match with repeat 
+            lbz   c_rptd          ; if match, repeated char
+            ldi   0               ; otherwise clear repeated char
+            str   rf            
+                        
 c_prt:      ldx                   ; get printable character at M(X)
             plo   r9
             
@@ -100,8 +107,22 @@ cprt_ins:   ghi   rb              ; get current line position
 cprt_done:  pop   rf              ; restore buffer register when done
             lbr   c_line          ; update line
 
+c_rptd:     ldx                   ; get character and check for repeated arrows
+            smi   'A'             ; check for ^[AAAA repeated sequence
+            lbnf  c_unkn          ; anything below 'A' is unknown
+            lbz   c_up            ; process Up Arrow key            
+            smi   1               ; check for ^[BBBB
+            lbz   c_dwn           ; process Down Arrow key
+            smi   1               ; check for ^[CCCC
+            lbz   c_rght          ; process Right Arrow key  
+            smi   1               ; check for ^[DDDD
+            lbz   c_left          ; process Left Arrow key
+            lbnz  c_unkn          ; Anything else is an unknown sequence
                 
-c_esc:      call  o_readkey       ; get control sequence introducer character
+c_esc:      load  rf, c_rpt       ; clear repeated character
+            ldi   0               ; for control sequence
+            str    rf
+            call  o_readkey       ; get control sequence introducer character
             str   r2              ; save character at M(X)  
             smi   '['             ; check for csi escape sequence
             lbz   sq_csi          ; <Esc>[ is a valid ANSI sequence
@@ -164,7 +185,10 @@ sq_ok:
             lbz   c_bktab         ; process Shift-Tab 
             lbr   c_unkn          ; Anything else is unknown
                 
-c_ctrl:     ldx                   ; get control character at M(X)
+c_ctrl:     load  rf, c_rpt       ; clear repeated character
+            ldi   0               ; for control sequence
+            str    rf
+            ldx                   ; get control character at M(X)
             smi   2               ; check for Ctrl-B (Home)
             lbz   c_home
             smi   1               ; check for Ctrl-C (Copy)
@@ -325,15 +349,27 @@ c_help:     lbr   c_loop          ; no help implemented
             
 ;-----  3 character csi escape sequences
 c_up:       call  do_up
+            load  rf, c_rpt       ; set repeated character
+            ldi   'A'             ; for up arrow ^[AAAA
+            str    rf
             lbr   c_update
             
-c_dwn:      call  do_down            
+c_dwn:      call  do_down  
+            load  rf, c_rpt       ; set repeated character
+            ldi   'B'             ; for down arrow ^[BBBB
+            str    rf
             lbr   c_update
 
 c_rght:     call  do_rght
+            load  rf, c_rpt       ; set repeated character
+            ldi   'C'             ; for right arrow ^[CCCC
+            str    rf
             lbr   c_update
 
 c_left:     call  do_left
+            load  rf, c_rpt       ; set repeated character
+            ldi   'D'             ; for left arrow ^[DDDD
+            str    rf
             lbr   c_update
 
 c_bktab:    call  do_bktab
@@ -386,6 +422,7 @@ c_error:    load  rf, mem_err     ; show out of memory error
             call  do_confirm
               
 c_exit:     return
+c_rpt:        db 0                ; repeated character
 mem_err:      db '*** Error: Out of Memory ***',0            
             endp   
                            
