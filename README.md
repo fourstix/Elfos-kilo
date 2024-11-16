@@ -3,9 +3,9 @@ A full screen editor for the Elf/OS written in 1802 Assembly language and based 
 
 Platform
 --------
-The Elf/OS kilo editor was written for an 1802 based Microcomputer running the Elf/OS operating system, such as the [Pico/Elf](http://www.elf-emulation.com/picoelf.html) by Mike Riley or the [1802-Mini](https://github.com/dmadole/1802-Mini) by David Madole. A lot of information and software for the Pico/Elf and the 1802-Mini can be found on the [Elf-Emulation](http://www.elf-emulation.com/) website and in the [COSMAC ELF Group](https://groups.io/g/cosmacelf) at groups.io.
+The Elf/OS kilo editor was written for an 1802 based Microcomputer running the Elf/OS operating system, such as the [Pico/Elf](http://www.elf-emulation.com/picoelf.html) by Mike Riley or the [1802-Mini](https://github.com/dmadole/1802-Mini) by David Madole or the [AVI Elf II](https://github.com/awasson/AVI-ELF-II) by Ed Keefe. A lot of information and software for the Pico/Elf, the 1802-Mini and the AVI Elf II can be found on the [Elf-Emulation](http://www.elf-emulation.com/) website and in the [COSMAC ELF Group](https://groups.io/g/cosmacelf) at groups.io.
 
-The Elf/OS kilo editor were assembled and linked with updated versions of the Asm-02 assembler and Link-02 linker by Mike Riley. The updated versions required to assemble and link this code are available at [arhefner/Asm-02](https://github.com/arhefner/Asm-02) and [arhefner/Link-02](https://github.com/arhefner/Link-02).
+The Elf/OS kilo editor were assembled and linked with updated versions of the Asm-02 assembler and Link-02 linker by Mike Riley. The updated versions required to assemble and link this code are available at [fourstix/Asm-02](https://github.com/fourstix/Asm-02) and [fourstix/Link-02](https://github.com/fourstix/Link-02).
 
 
 Elf/OS Kilo Commands
@@ -71,13 +71,20 @@ Copy, Cut & Paste
 * Use Copy (Ctrl-C) to copy a line into the clip board 
 * Use Cut (Ctrl-X) to delete a line and copy into the clip board 
 * Use Paste (Ctrl-V) to paste a line from the clip board and insert above the current line
-  
+
 Text Limits
 -----------
 * Lines can have up to 124 characters per line
-* A file can have up to 65,535 lines 
-* File size is limited to available memory
 * Tabs are defined as 4 character tab stops (1, 5, 9, etc.)
+  
+File Limits
+-----------
+* Buffers are used to edit files larger than 96 lines 
+* Each buffer has up to 96 lines
+* A file can have up to 255 buffers, or 24,498 lines
+* Buffers are saved to temporary spill files, while the file is edited
+* Spill files are created automatically when the file is loaded 
+* Spill files are deleted when the application ends
 
 Key Character Sequences
 -----------------------
