@@ -54,15 +54,15 @@ Elf/OS Kilo Modes
   * Enter splits a line at the cursor inside a line
   * Delete at the end of a line joins the current line with next line 
   * Backspace at the beginning of an empty line deletes the line
-  * Split (Ctrl-\) can also be used to insert lines or split a line
+  * Split (Ctrl-\\) can also be used to insert lines or split a line
   * Join (Ctrl-J) can also be used to join lines
    
 * **Overwrite Mode** 
   * Characters overwrite existing characters in the text
   * Enter moves down to the beginning of the next line
   * Delete and backspace do not delete empty lines automatically 
-  * Use Split (Ctrl-\) at the beginning or end of a line to insert an empty line
-  * Use Split (Ctrl-\) to explicitly split a line at the cursor inside a line
+  * Use Split (Ctrl-\\) at the beginning or end of a line to insert an empty line
+  * Use Split (Ctrl-\\) to explicitly split a line at the cursor inside a line
   * Use Join (Ctrl-J) to explicitly join lines
   * Use Cut (Ctrl-X) to delete a line (and copy into the clip board)
 
