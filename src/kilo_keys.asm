@@ -191,6 +191,7 @@ c_ctrl:     load  rf, c_rpt       ; clear repeated character
             ldx                   ; get control character at M(X)
             smi   2               ; check for Ctrl-B (Home)
             lbz   c_home
+            lbnf  c_unkn          ; Ctrl-A (minicom), Ctrl-@ (null) are not used
             smi   1               ; check for Ctrl-C (Copy)
             lbz   c_copy
             smi   1               ; check for Ctrl-D (Down Arrow)
@@ -244,9 +245,9 @@ c_ctrl:     load  rf, c_rpt       ; clear repeated character
             lbnf  c_unkn          ; Ctrl-[ is escape (used by ANSI sequences)
             smi   1               ; check for Ctrl-] (Back Tab)
             lbz   c_bktab
-            smi   2               ; check for Ctrl-?
-            lbz   c_help
+            smi   2               ; check for Ctrl-^
             lbnf  c_unkn          ; Ctrl-^ is not used
+            lbz   c_help          ; check for Ctrl-? (sometimes Ctrl-_)
             smi   96              ; check for DEL (Delete)            
             lbz   c_del
 #ifdef  KILO_DEBUG
@@ -316,7 +317,7 @@ c_find:     call  do_find
             lbr   c_loop          ; otherwise, just continue
             
 c_goto:     call  do_goto
-            lbr   c_update        ; update display                   
+            lbr   c_loop          ; continue processing                 
             
 c_where:    call  do_where        ; show file location line and column
             lbr   c_loop          ; continue processing                   
@@ -423,7 +424,7 @@ c_error:    load  rf, mem_err     ; show out of memory error
               
 c_exit:     return
 c_rpt:        db 0                ; repeated character
-mem_err:      db '*** Error: Out of Memory ***',0            
+mem_err:      db '*** An Error Occurred ***',0            
             endp   
                            
             
@@ -579,7 +580,18 @@ del_exit:   pop   rd
             glo   r8                ; check for top of file
             lbnz  pup_cont          ; if r8 is non-zero, continue
             ghi   r8          
-            lbz   pup_skip          ; if r8 = 0, then don't move up
+            lbnz  pup_cont          ; if r8 is non-zero, continue
+
+            ;-------------------------------------------------------                                  
+            ; If at top of buffer, move to previous buffer  
+            ;-------------------------------------------------------                                  
+            call  prev_spill 
+            lbdf  pup_skip          ; if no more buffers just skip
+  
+            call  refresh_screen
+            call  kilo_status       ; restore the normal status messae
+            call  prt_status
+            return                  ; if we loaded a new buffer we're done      
 
 pup_cont:   call  window_size       ; get the window dimensions
             ghi   r9                ; get the window size in rows
@@ -633,10 +645,30 @@ pup_skip:   return                  ; top row is new current row
             phi   r8
             call  find_line       ; check to see if line is valid
             lbnf  pdwn_ok         ; r8 is valid, so we are okay
+
+            ;-------------------------------------------------------                                  
+            ; If bottom of buffer, move to next buffer  
+            ;-------------------------------------------------------
             
-            call  find_eob        ; otherwise find the end of buffer
+            load  rf, spill_cnt   ; get the spill count
+            ldn   rf        
+            lbz   pdwn_last       ; if no spill files, move to end
+                                  
+            call  next_spill      ; otherwise move to next spill file 
+            lbdf  pdwn_last       ; if no more spill files, move to end
+            
+            call  o_inmsg
+              db 27,'[2J',0       ; clear display
+
+            call  refresh_screen  ; redraw screen
+            call  kilo_status     ; restore the normal status messae
+            call  prt_status
+            return                ; if we loaded a new buffer we're done      
+            
+pdwn_last:  call  find_eob        ; otherwise find the end of current buffer
             dec   r8              ; go back to last text line
-            call  find_line       ; get the last line
+            call  find_line       ; get the last line            
+            
 pdwn_ok:    call  setcurln        ; set the new currentline
             ldn   ra              ; get the line size of new current line
             smi   2               ; subtract CRLF
@@ -663,7 +695,18 @@ pdwn_size:  phi   rb              ; set line size for new line
             glo   r8                ; check for top of file
             lbnz  up_cont           ; if r8 is non-zero, continue
             ghi   r8          
-            lbz   up_skip           ; if r8 = 0, then don't move up
+            lbnz  up_cont           ; if r8 is non-zero, continue
+
+            ;-------------------------------------------------------                                  
+            ; If at top of buffer, move to previous buffer  
+            ;-------------------------------------------------------                                  
+            call  prev_spill 
+            lbdf  up_skip           ; if no more buffers just skip
+  
+            call  refresh_screen
+            call  kilo_status       ; restore the normal status messae
+            call  prt_status
+            return                  ; if we loaded a new buffer we're done      
             
 up_cont:    dec   r8                ; move current line up one
             call  setcurln          ; save current line in memory
@@ -694,9 +737,29 @@ up_skip:    return
             call  get_num_lines       ; get the maximum lines
             call  getcurln            ; get current line
             sub16 r8,r9               ; check current line against limit
-            lbdf  dwn_skip            ; if current line >= number lines, don't move                
+            lbnf  dwn_move            ; if current line < number lines, move down                
+              
+            ;-------------------------------------------------------                                  
+            ; If bottom of buffer, move to next buffer  
+            ;-------------------------------------------------------
+            
+            load  rf, spill_cnt       ; get the spill count
+            ldn   rf        
+            lbz   dwn_skip            ; if no spill files, don't move
+                                  
+            call  next_spill          ; otherwise move to next spill file 
+            lbdf  dwn_skip            ; if no more spill files, don't move
+            
+            call  o_inmsg
+              db 27,'[2J',0           ; clear display
 
-            call  getcurln
+            call  refresh_screen      ; redraw screen
+            call  kilo_status         ; restore the normal status messae
+            call  prt_status
+            pop   r9                  ; restore scratch register
+            return                    ; if we loaded a new buffer we're done      
+
+dwn_move:   call  getcurln
             inc   r8                  ; move current line down one
             call  setcurln            ; save current line in memory
             call  find_line           ; point ra to new line
@@ -905,10 +968,17 @@ btab_end:   return
             ;-------------------------------------------------------                                                
             proc  do_save
             push  rf              ; save register
-            call  is_dirty        ; DF = 1, means file is dirty    
-            lbnf  ds_none         ; no changes to save
             
-            call  save_buffer     ; save file to disk
+            load  rf, save_msg    ; show initial save message
+            call  set_status      ; show message set previously
+            call  prt_status      
+                        
+            load  rf, e_state     ; get editor state byte  
+            ldn   rf
+            ani   DIRTY_BIT       ; check the dirty bit
+            lbz   ds_none         ; no changes to save
+            
+            call  save_file     ; save file to disk
             lbdf  ds_error        ; DF = 1, means an error occurred
             load  rf, saved_msg   ; show file was saved 
             ldi   0               ; save DF result on stack
@@ -943,6 +1013,7 @@ ds_show:    call  set_status      ; show message set previously
 clean_msg:    db 'No file changes to save.',0
 saved_msg:    db '* File Saved. *',0
 saved_err:    db '* ERROR Saving File. *',0
+save_msg:     db 'Saving...',0
             endp
 
             ;-------------------------------------------------------
@@ -961,7 +1032,19 @@ saved_err:    db '* ERROR Saving File. *',0
             glo   r8                ; check for top of file
             lbnz  top_cont          ; if r8 is non-zero, continue
             ghi   r8          
-            lbz   top_skip          ; if r8 = 0, then don't move up
+            lbnz  top_cont          ; if r8 is non-zero, continue
+
+            ;-------------------------------------------------------                                  
+            ; If at top of buffer, move to previous buffer  
+            ;-------------------------------------------------------                                  
+            call  prev_spill 
+            lbdf  top_skip          ; if no more buffers just skip
+  
+            call  refresh_screen
+            call  kilo_status       ; restore the normal status messae
+            call  prt_status
+            pop   rf                ; restore register
+            return                  ; if we loaded a new buffer we're done      
 
 top_cont:   ldi   0                 ; if negative, set top row to zero
             phi   r8
@@ -997,7 +1080,29 @@ top_skip:   ldi   0                 ; set char position to far left
             ori   REFRESH_BIT     
             str   rf
             
-            call  get_num_lines     ; get total number of lines in r8
+            call  get_num_lines     ; get the maximum lines
+            dec   r9                ; line index is one less than number of lines
+            call  getcurln          ; get current line
+            sub16 r8,r9             ; check current line against limit
+            lbnf  db_move           ; if current line < number lines, just move down        
+            
+            ;-------------------------------------------------------                                  
+            ; If bottom of buffer, move to next spill file  
+            ;-------------------------------------------------------                                  
+            call  next_spill 
+            lbdf  db_exit           ; if no more spill files, don't move
+  
+            call  o_inmsg
+              db 27,'[2J',0         ; erase display
+
+            call  refresh_screen
+            call  kilo_status       ; restore the normal status messae
+            call  prt_status
+            pop   rf                ; restore register
+            return                  ; if we loaded a new buffer we're done      
+        
+
+db_move:    call  get_num_lines     ; get total number of lines in r8
             dec   r9                ; line index is one less than number of lines
             copy  r9,r8             ; set current line to last line
             call  setcurln          ; save the current line
@@ -1012,7 +1117,7 @@ bot_size:   phi   rb                ; set rb.1 to new size
             plo   rb  
             call  scroll_down       ; set top row to new value
 
-            pop   rf
+db_exit:    pop   rf
             return 
             endp
             
@@ -1268,8 +1373,10 @@ dw_line:    lda   rf              ; copy line label into msg buffer
 
 dw_lnumbr:  push  rd              ; save msg buffer pointer
             call  getcurln        ; get current line index
-            copy  r8, rd          ; copy index for conversion to ask        
-            inc   rd              ; add one to index
+            copy  r8, r9          ; copy current line to convert to buffer value
+            call  get_buf_line    ; convert to line value in buffer
+            copy  r9, rd          ; copy index for conversion to ask        
+            inc   rd              ; add one to index to get 1 based number
             load  rf, num_buf     
             call  f_uintout       ; convert to integer ascii string
             ldi   0               ; make sure null terminated
@@ -1278,40 +1385,49 @@ dw_lnumbr:  push  rd              ; save msg buffer pointer
             
             load  rf, num_buf     
 dw_lnum:    lda   rf              ; copy line number into msg buffer
-            lbz   dw_size        
+            lbz   dw_buffer       ; check for buffer message        
             str   rd
             inc   rd
-            lbr   dw_lnum            
-
-dw_size:    load  rf, dw_sztxt      
-dw_sz:      lda   rf              ; copy text into msg buffer
-            lbz   dw_tlines       ; before total lines number
+            lbr   dw_lnum   
+            
+dw_buffer:  load  rf, spill_cnt   ; get the spill count
+            ldn   rf        
+            lbz   dw_show         ; if no spill files, message is done
+            
+            load  rf, dw_bftxt      
+dw_buf:     lda   rf              ; copy line label into msg buffer
+            lbz   dw_bnumbr       ; then add line number
             str   rd
             inc   rd
-            lbr   dw_sz
+            lbr   dw_buf
 
-dw_tlines:  push  rd              ; save msg buffer pointer
-            call  get_num_lines   ; get total number of lines
-            copy  r9, rd          ; copy total number for conversion
-            load  rf, num_buf     ; put result in number buffer
+dw_bnumbr:  push  rd              ; save msg buffer pointer
+            ldi   0               ; clear rd
+            phi   rd
+            load  rf, fbuf_idx    ; get the current buffer index
+            ldn   rf                  
+            plo   rd
+            inc   rd              ; add one to index to get 1 based number
+            load  rf, num_buf     
             call  f_uintout       ; convert to integer ascii string
             ldi   0               ; make sure null terminated
             str   rf              
             pop   rd              ; restore msg buffer pointer
-
-dw_tnumbr:  load  rf, num_buf
-dw_tnum:    lda   rf              ; copy total line number into msg buffer
-            lbz   dw_lend         ; add final text after total lines
+           
+            load  rf, num_buf     
+dw_bnum:    lda   rf              ; copy buffer number into msg buffer
+            lbz   dw_bend         ; end buffer message        
             str   rd
             inc   rd
-            lbr   dw_tnum
-
-dw_lend:    load  rf, dw_lines      
-dw_end:     lda   rf              ; copy text into msg buffer
-            lbz   dw_show         ; then show message
+            lbr   dw_bnum   
+            
+dw_bend:    load  rf, dw_endtxt      
+dw_bend2:   lda   rf              ; copy closing text into msg buffer
+            lbz   dw_show         ; show message with buffer number
             str   rd
             inc   rd
-            lbr   dw_end
+            lbr   dw_bend2
+        
 
 dw_show:    ldi   0               ; make sure message ends in null
             str   rd
@@ -1332,8 +1448,8 @@ dw_show:    ldi   0               ; make sure message ends in null
             return
 dw_coltxt:    db 'Column ',0
 dw_lntxt:     db ', Line ',0
-dw_sztxt:     db ' out of ',0
-dw_lines:     db ' Lines ',0 
+dw_bftxt:     db ', (Buffer ',0
+dw_endtxt:    db ')',0
             endp
 
             ;-------------------------------------------------------
@@ -1349,6 +1465,8 @@ dw_lines:     db ' Lines ',0
             ;  r9 - scratch register
             ; Returns:
             ;  rb.0 - updated cursor position
+            ;  DF = 0, success
+            ;  DF = 1, error - invalid line number
             ;-------------------------------------------------------                                                
             proc  do_goto
             push  rf              ; save registers
@@ -1374,9 +1492,24 @@ dw_lines:     db ' Lines ',0
             glo   rd
             lbz   dg_notfnd       ; Zero is not a valid line number 
             
-dg_find:    dec   rd              ; line index is one less than line number            
-            copy  rd, r8          ; set line index to new falue
-            call  find_line
+            
+dg_find:    dec   rd              ; line index is one less than line number
+
+            load  rf, spill_msg   ; show a message 
+            call  set_status          
+            call  prt_status          
+            
+            load  rf, spill_cnt   ; get the spill count
+            ldn   rf        
+            lbz   dg_text         ; if no spill files, search text buffer
+            
+            call  seek_buf_line   ; load buffer for line, set r8 to new line
+            lbdf  dg_notfnd       ; DF = 1, means buffer index invalid
+            lbr   dg_srch         ; find line in buffer
+            
+dg_text:    copy  rd, r8          ; set line index to new value
+
+dg_srch:    call  find_line
             lbdf  dg_notfnd       ; DF = 1, means line not found in text buffer
 
             call  setcurln        ; save the current line
@@ -1387,16 +1520,28 @@ dg_find:    dec   rd              ; line index is one less than line number
 dg_size:    phi   rb              ; set rb.1 to new size
             call  put_line_buffer ; put current line in line buffer
             
+            ldi   0               ; move to beginning column
+            plo   rb
+
             sub16 r8, r9          ; did we move up or down?            
             lbdf  dg_down         ; if new line > old line index, we went down
             
             call  getcurln        ; otherwise we went up, restore r8
             call  scroll_up       ; update row offset
-            lbr   dg_exit         
+            lbr   dg_done         
             
 dg_down:    call  getcurln        ; restore r8
             call  scroll_down     ; update row offset 
-            lbr   dg_exit         
+            lbr   dg_done        
+            
+dg_done:    call  clear_screen    ; clear screen
+            call  refresh_screen  ; refresh screen
+            call  kilo_status     ; set default status msg
+            call  prt_status      ; restore status
+            call  get_cursor      ; restore cursor after status message update
+            call  move_cursor
+            clc                   ; set success 
+            lbr   dg_exit         ; and exit
             
 dg_notfnd:  copy  r9, r8          ; restore r8 to original value
             load  rf, dg_noline   ; show not found message
@@ -1404,6 +1549,12 @@ dg_notfnd:  copy  r9, r8          ; restore r8 to original value
             call  prt_status      
             call  get_cursor      ; restore cursor after status message update
             call  move_cursor
+
+            load  rf, e_state     ; set status bit
+            ldn   rf
+            ori   STATUS_BIT      ; set bit to reset status after showing msg
+            str   rf                                    
+            stc                   ; set error
             
 dg_exit:    pop   r9
             pop   rc
@@ -1520,6 +1671,10 @@ dc_invalid:   db 'Invalid file name. File not saved.',0
 df_next:    call  find_string     ; find the string in buffer
             lbdf  df_found 
 
+            load  rf, spill_cnt   ; get the spill count
+            ldn   rf
+            lbnz  df_ask2        
+
 df_ask:     load  rf, df_redo     ; set prompt to try again
             call  do_confirm
             lbnf  df_none         ; if negative, don't search again
@@ -1530,6 +1685,34 @@ df_ask:     load  rf, df_redo     ; set prompt to try again
             call  find_string     ; search from the top
             lbdf  df_found
             lbr   df_ask          ; show not found message
+            
+            
+df_ask2:    load  rf, df_nbuff    ; set prompt to try next buffer
+            call  do_confirm
+            lbnf  df_none         ; if negative, don't search again
+            
+            call  next_spill
+            lbnf  df_nbsrch       ; if next buffer available, search it
+            
+            load  rf, df_redo     ; ask if we want to reset to top
+            call  do_confirm
+            lbnf  df_none         ; if negative, don't search again
+            
+            call  reset_spill     ; reset to first spill file
+            
+df_nbsrch:  ldi   0               
+            phi   r8              ; set current line to zero
+            plo   r8
+            plo   rb              ; set cursor position to Zero
+            plo   r9              ; clear saved position
+            phi   r9
+            phi   rc
+            call  clear_screen    ; clear screen
+            call  refresh_screen  ; r8, and rb.0 are reset
+            
+            call  find_string     ; search from the top
+            lbdf  df_found
+            lbr   df_ask2         ; show not found message
             
 df_found:   load  rd, df_target   ; set destination to target string            
             call  found_screen    ; recalculate row and column offsets
@@ -1572,7 +1755,8 @@ df_exit:    pop   r9
 df_prmpt:     db 'Enter text to find: ',0
 df_again:     db 'Found. Search again (Y/N)?',0
 df_redo:      db 'Not Found. Search again from the top (Y/N)?',0            
-df_target:    ds MAX_TARGET+1             
+df_nbuff:     db 'Not Found. Search next buffer (Y/N)?',0            
+df_target:    ds MAX_TARGET+1    
               db 0
             endp 
             
@@ -1889,6 +2073,8 @@ di_exit:    pop   rd            ; restore register
 
 
             ;-------------------------------------------------------
+            ; Name: do_quit
+            ;
             ; Quit, check the dirty flag and confirm before exit.
             ; Parameters: (None) 
             ; Uses: 
@@ -1899,9 +2085,12 @@ di_exit:    pop   rd            ; restore register
             ;-------------------------------------------------------
             proc  do_quit
             push  rf              ; save register used
-            call  is_dirty
-            lbdf  dq_ask          ; if dirty, ask before exiting
-            clc                   ; if not dirty, just say okay to exit  
+            load  rf, e_state     ; get editor state byte  
+            ldn   rf
+            ani   DIRTY_BIT       ; check the dirty bit
+            lbnz  dq_ask          ; if changes, ask before exit
+
+            clc                   ; if not dirty, just exit  
             lbr   dq_exit
             
 dq_ask:     load  rf, warn_str    ; set the status to the save file warning
@@ -1929,7 +2118,7 @@ dq_exit:    pop   rf
 warn_str:     db 'Unsaved Changes!  Quit without Saving (Y/N)?', 0
 sure_str:     db 'Are you sure (Y/N)?',0
             endp
-
+            
 #ifdef  KILO_HELP
             ;-------------------------------------------------------
             ; Name: do_help
@@ -1972,7 +2161,7 @@ sure_str:     db 'Are you sure (Y/N)?',0
             load  rf, hlp_txt5    ; print next line of text
             call  o_msg  
 
-            load  rf, hlp_txt6    ; print last line of text
+            load  rf, hlp_txt6    ; print next line of text
             call  o_msg  
             
             load  rf, hlp_prmpt
@@ -1982,9 +2171,13 @@ sure_str:     db 'Are you sure (Y/N)?',0
             
             call  o_inmsg
               db  27,'[0m',0      ; set text back to normal     
-
             call  o_inmsg
-              db 27,'[?25h',0     ; show cursor        
+            db 27,'[?25h',0     ; show cursor        
+
+            call  clear_screen     
+            call  refresh_screen  ; redraw screen
+            call  kilo_status     ; update the status message
+            call  prt_status      ; update the status line  
             pop   rf              ; restore register  
             return
             
@@ -2003,7 +2196,7 @@ hlp_txt4:     db '| ^J         Join lines          | ^W,         show Where in f
 hlp_txt5:     db '| ^M, Enter  Insert mode, new    | ^Z          Bottom of File           |',13,10
               db '|   line or split. Overwrite     | ^\          Split line at cursor     |',13,10
               db '|   mode, move to next line      | ^], Shift+Tab  move to prevous tab   |',13,10,0
-hlp_txt6:     db '| ^N, PgDn   Next screen         | ^?          Show this help text      |',13,10
+hlp_txt6:     db '| ^N, PgDn   Next screen         | ^?, ^_      Show this help screen    |',13,10
               db '+--------------------------------+--------------------------------------+',13,10,0
 hlp_prmpt:    db ' Press any key',0                            
             endp

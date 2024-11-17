@@ -55,6 +55,12 @@
 #define MAX_TARGET 40
 
 ;-------------------------------------------------------------------------------
+; Number Lines in single Buffer 
+;-------------------------------------------------------------------------------
+#define BUF_LINES  96 
+
+
+;-------------------------------------------------------------------------------
 ; Editor State bits
 ;-------------------------------------------------------------------------------
 #define DIRTY_BIT     $80
@@ -67,11 +73,18 @@
 #define NEWFILE_MASK  $EF
 #define STATUS_BIT    $08
 #define STATUS_MASK   $F7
+#define BUFFER_CHG    $02
+#define BUFFER_MASK   $FD
 #define ERROR_BIT     $01
 #define ERROR_MASK    $FE
 
-;---- Mask for clearing dirty and new file bits at same time (file saved)
-#define SAVED_MASK    $6F
+;---- dirty and buffer changed bits
+#define BUFFER_DIRTY  $82
+#define FILE_CHG_MASK $7D
+
+;---- Mask for clearing dirty, buffer changed and new file bits at same time (file saved)
+#define SAVED_MASK    $6D
+
 ;---- Mask for clearing refresh and status bits at same time (screen updated)
 #define SCREEN_MASK   $B7
 
@@ -128,8 +141,8 @@
             extrn   prt_find_dbg
             extrn   kilo_status
             extrn   set_dirty
-            extrn   clr_file_bits
-            extrn   is_dirty
+;            extrn   clr_file_bits
+;            extrn   is_dirty
             extrn   is_fnchar
             extrn   split_line
             extrn   join_lines
@@ -137,6 +150,21 @@
             extrn   found_screen
             extrn   clip_brd
             extrn   set_status_cmd
+            extrn   fbuf_idx
+            extrn   spill_cnt
+            extrn   sname
+            extrn   spl_idx
+            extrn   next_buf
+            extrn   prev_buf
+            extrn   reset_buf
+            extrn   spill_msg
+            extrn   next_spill
+            extrn   prev_spill
+            extrn   reset_spill
+            extrn   get_buf_line
+            extrn   set_buf
+            extrn   set_spill
+            extrn   seek_buf_line
 
 ;-------------------------------------------------------------------------------
 ; Key handler routines used by kilo editor
@@ -177,7 +205,8 @@
             extrn   do_find
             extrn   do_copy
             extrn   do_paste
-            extrn   do_help  
+            extrn   do_help
+            extrn   do_reload  
 
 ;-------------------------------------------------------------------------------
 ; File routines used by kilo editor
@@ -190,9 +219,14 @@
             extrn   fname 
             extrn   load_buffer
             extrn   save_buffer
+            extrn   copy_buffer
             extrn   insert_line
             extrn   delete_line
             extrn   update_line
             extrn   find_string
-            extrn   set_page
-            extrn   check_page
+            extrn   load_file
+            extrn   save_file            
+            extrn   load_text
+            extrn   save_text
+            extrn   setup_spill
+            extrn   teardown_spill
