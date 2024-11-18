@@ -83,8 +83,9 @@ File Limits
 * Each buffer has up to 96 lines
 * A file can have up to 255 buffers, or 24,498 lines
 * Buffers are saved to temporary spill files, while the file is edited
-* Spill files are created automatically when the file is loaded 
-* Spill files are deleted when the application ends
+* Spill files are created automatically when a large file is loaded 
+* Spill files are named *__kilo.nn*, where nn is the 2 digit hex value of their index
+* Spill files are deleted automatically when the application ends
 
 Key Character Sequences
 -----------------------
