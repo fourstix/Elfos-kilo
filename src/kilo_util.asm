@@ -3015,7 +3015,7 @@ sp_cnt:       db  0
             ; Name of spill file
             ;-------------------------------------------------------            
             proc  sname
-              db '__kilo.$'
+              db '__kilo.'
 spl_idx:      db '00',0,           ;default is zero
 
               public    spl_idx
