@@ -26,12 +26,12 @@
 ;-------------------------------------------------------------------------------
 ; Uncomment to enable Debug code 
 ;-------------------------------------------------------------------------------
-; #define  KILO_DEBUG  1
+;#define  KILO_DEBUG  1
 
 ;-------------------------------------------------------------------------------
 ; Uncomment to enable flow control (Xon/Xoff) 
 ;-------------------------------------------------------------------------------
-#define  KILO_FLOW   1
+;#define  KILO_FLOW   1
 
 ;-------------------------------------------------------------------------------
 ; Comment out to remove Help information (about 1K in size) 
@@ -53,6 +53,7 @@
 #define MAX_FNAME  19
 #define MAX_INTSTR  5
 #define MAX_TARGET 40
+#define SCREEN_TAB 16
 
 ;-------------------------------------------------------------------------------
 ; Number Lines in single Buffer 
@@ -165,6 +166,7 @@
             extrn   set_buf
             extrn   set_spill
             extrn   seek_buf_line
+            extrn   eol_msg
 
 ;-------------------------------------------------------------------------------
 ; Key handler routines used by kilo editor
@@ -230,3 +232,4 @@
             extrn   save_text
             extrn   setup_spill
             extrn   teardown_spill
+            

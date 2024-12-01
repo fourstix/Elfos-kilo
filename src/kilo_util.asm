@@ -77,9 +77,6 @@
           ;-------------------------------------------------------
 
             proc  begin_kilo
-            push  rf              ; save registers
-            push  rd
-            push  rc 
                  
             ;------ Enable raw mode
             ghi   re              ; get Elf/OS serial byte
@@ -112,37 +109,40 @@ old_file:   call  find_eob        ; get the number of lines into r8
             plo   r8
             phi   rb              ; clear out line length and character position
             plo   rb
+            phi   rc              ; set column offset to zero
 
             call  setcurln        ; set the current line in text buffer
             call  set_row_offset  ; set row offset for the top of screen
             call  put_line_buffer
+            call  set_col_offset  ; set column offset in memory
             
             ;------ Set up default status msg
             call  kilo_status     ; set up initial sttus message 
-          
+
             call  clear_screen    ; clear the screen
             call  refresh_screen  ; print buffer to screen
 
             call  o_inmsg
             db 27,'[?25l',0       ; hide cursor        
-            
+
+#ifdef KILO_DEBUG                  
+            call  prt_status_dbg  ; always show debug status line              
+#else                         
             call  prt_status      ; print status line
+#endif          
+
             call  home_cursor     ; set cursor position in memory
-            
+              
             call  o_inmsg
-              db 27,'[H',0        ; home cursor on scren
+              db 27,'[H',0        ; home cursor on screen
             call  o_inmsg
               db 27,'[?25h',0     ; show cursor        
-
-            clc                   ; return without error  
-            
-bk_exit:    pop   rc              ; restore registers
-            pop   rd
-            pop   rf
+              
+            clc                   ; return without error              
             return
             
 bk_err:     stc                   ; return with error 
-            lbr   bk_exit
+            return
             endp
 
 
@@ -342,7 +342,7 @@ pos_x:    db 0,0,0,0              ; position string for x
             ;-------------------------------------------------------            
             proc  set_row_offset
             push  rf
-
+          
             load  rf, row_offset  ; top line index
             ghi   r8              ; get high index byte
             str   rf            
@@ -392,6 +392,7 @@ pos_x:    db 0,0,0,0              ; position string for x
             ; 
             ; Parameters:
             ;   rb.0 - character position
+            ;   rc.1 - column offset index
             ; Uses:
             ;   rf - buffer pointer
             ; Returns:
@@ -719,8 +720,8 @@ sdn_x_ok:   call  set_col_offset  ; set the column offset
           
             sub16 r9, r8          ; compare bottom index to current line
             ldi   0               ; set DF value for no scroll
-            lbdf  no_dnscrl       ; bottom line >= current line we are okay
-            
+            lbdf  no_dnscrl       ; bottom line >= current line we are okay            
+
             push  r8              ; save r8 for arithmetic
             glo   rc              ; get screen rows
             str   r2              ; save in M(X)
@@ -734,6 +735,7 @@ sdn_x_ok:   call  set_col_offset  ; set the column offset
             pop   r8              ; restore r8 after arithmetic
 
 no_dnscrl:  call  set_cursor      ; adjust the cursor position
+
             pop   r8              ; restore registers used
             pop   r9  
             pop   rc
@@ -763,10 +765,23 @@ no_dnscrl:  call  set_cursor      ; adjust the cursor position
             glo   rb              ; get char position value
             sm                    ; subtract offset from Ex
             lbdf  no_lfscrl       ; if char position > col_offset, no scroll
+            
             glo   rb              ; get the char position
-            str   rf              ; set column offset to current char position
+            lbz   lfs_updt        ; if we went home, set offset to zero
+            
+            ldn   rf
+            smi   SCREEN_TAB      ; move left a block of lines
+            lbdf  lfs_updt        ; if 0 or positive, update  position
+            ldi   0               ; if negative, set to zero (home)
+lfs_updt:   str   rf              ; set new column offset
             phi   rc              ; set rc.1 to column offset
-            load  rf, e_state     ; set refresh bit
+
+            load  rf, line_buf    ; check line buffer for text change
+            lda   rf              ; get dirty byte, rf points to string
+            lbz   lfs_line        ; if no change in line, ready to scroll
+            call  update_line     ; update line in txt buffer for refresh
+
+lfs_line:   load  rf, e_state     ; set refresh bit
             ldn   rf
             ori   REFRESH_BIT
             str   rf
@@ -789,10 +804,11 @@ no_lfscrl:  call  set_cursor      ; update cursor position
             ; Returns: 
             ;   DF = 0, if no scrolling occurred
             ;   DF = 1, if scrolling occurred 
-            ;   rc.1 - column offset 
+            ;   rc.1 - column offset,  rc.0 is consumed 
             ;-------------------------------------------------------            
             proc  scroll_right
             push  rf              ; save register used
+            
             load  rf, col_offset  ; horizontal index
             ldn   rf              ; get col offset 
             str   r2              ; save offset in M(X)
@@ -804,16 +820,33 @@ no_lfscrl:  call  set_cursor      ; update cursor position
             glo   rb              ; get char position value
             sd                    ; subtract char position from edge of screen
             lbdf  no_rtscrl       ; if char position < edge of screen, no scroll
-            ldn   rf              ; get screen width
-            smi   1               ; subtract one for right-most position
-            str   r2              ; save in M(x)            
-            glo   rb              ; get the char position
-            sm                    ; subtract right-most position from char position            
-            phi   rc              ; set rc.1 to column offset
-            load  rf, col_offset  ; update column offset in memory
-            ghi   rc              ; get new column offset
-            str   rf              ; set column offset to difference
-            load  rf, e_state     ; set refresh bit
+            
+            sdi   0               ; negate difference to get surplus (position - edge)   
+            str  r2               ; save surplus in M(X)
+            ldi   0               ; set up counter
+            plo   rc              ; to check for surplus requiring multiple screen tabs 
+            
+rts_lp:     inc   rc              ; bump counter for each screen tab value
+            ldi   SCREEN_TAB      ; check size of surplus
+            sd                    ; diff = surplus - SCREEN_TAB
+            str   r2              ; save new surplus in M(X)
+            lbdf  rts_lp          ; keep going until surplus < SCREEN_TAB
+            
+            load  rf, col_offset  ; update column offset with number of screen tabs
+rts_adj:    ldn   rf              ; get column offset
+            adi   SCREEN_TAB      ; move screen to the left a block of columns            
+            str   rf              ; update screen offset
+            phi   rc              ; save screen offset in rc.1
+            dec   rc              ; decrement counter
+            glo   rc              ; check if counter is done
+            lbnz  rts_adj
+            
+            load  rf, line_buf    ; check line buffer for text change
+            lda   rf              ; get dirty byte, rf points to string
+            lbz   rts_line        ; if no change in line, ready to scroll
+            call  update_line     ; update line in txt buffer for refresh
+
+rts_line:   load  rf, e_state     ; set refresh bit
             ldn   rf
             ori   REFRESH_BIT
             str   rf
@@ -1009,13 +1042,7 @@ ln_cont:    inc   r8              ; add one to current line value
             glo   rc              ; check counter
             lbnz  prt_lines       ; if zero done with text buffer  
 
-rf_done:    
-        
-#ifdef KILO_DEBUG
-            call  prt_status_dbg  ; print debug status each time
-#endif
-
-            call  get_cursor      ; restore cursor
+rf_done:    call  get_cursor      ; restore cursor
             call  move_cursor     ; position cursor
                 
             call  o_inmsg
@@ -1052,6 +1079,7 @@ rf_size:    phi   rb              ; save line size in rb.1
             ;   r7 - cursor position
             ; Uses:
             ;   rf - buffer pointer 
+            ;   rc.1 - column offset
             ;   r7 - cursor position
             ; Returns: (None)
             ;-------------------------------------------------------            
@@ -1061,6 +1089,16 @@ rf_size:    phi   rb              ; save line size in rb.1
             load  rf, line_buf    ; point to current line buffer
             lda   rf              ; get dirty flag
             lbz   rl_done         ; if no changes, exit 
+            
+            call  get_col_offset  ; get column offset in rc.1
+            ghi   rc              ; get character offset
+            str   r2              ; save in rf
+            glo   rf
+            add                   ; add offset to rf
+            plo   rf              ; update low byte
+            ghi   rf              ; update high byte
+            adci  0               ; with carry flag 
+            phi   rf              ; rf now points to first on-screen character
             
             push  r7              ; save cursor position  
             
@@ -1522,6 +1560,7 @@ jl_exit:    pop   rc              ; restore registers
             call  getcurln        ; get current line number
             call  find_line       ; set ra to line in text buffer
             lbdf  slb_err         ; if not found set to CRLF and null
+            
             lda   ra              ; get size of line
             plo   rc              ; set counter
 slb_lp:     lbz   slb_done        ; if size is zero, we are done
@@ -1542,6 +1581,7 @@ slb_err:    ldi   13              ; write CR (10)
 slb_done:   ldi   0               ; line ends in null
             str   rf              ; save null in buffer
             inc   rf
+            
             pop   rc              ; restore registers
             pop   rf            
             return
@@ -1645,9 +1685,6 @@ ed_state:    db     0           ; editor state bits
             push  r9
             push  r8              ; save current line
           
-;            call  o_inmsg
-;              db 27,'[25;1H',0    ; set cursor for status line
-
             load  rf, status_cmd  ; move cursor down to status line
             call  o_msg
                           
@@ -2228,7 +2265,7 @@ ds_done:    ldi   0
             pop   rf 
             return 
 ds_insert:    db '[Ins] ',0
-ds_over:      db '_Over_ ',0
+ds_over:      db '<Over> ',0
 ds_newmsg:    db ' (New)',0
             endp
             
@@ -2325,32 +2362,39 @@ ss_exit:    pop   r9          ; restore sratch registers
             ;   DF = 1, if valid filename character
             ;   DF = 0, if not valid
             ;-------------------------------------------------------
+            ; Note: Only the uppercase letters A-Z, lowercase 
+            ;   letters a-z, numbers 0-9, period, underscore and
+            ;   forward slash are valid.
+            ;-------------------------------------------------------
             proc  is_fnchar
             stxd                  ; save character on stack
-            smi   '!'             ; exclaimation is first valid character
-            lbnf  cfn_bad         ; invalid characters before exclamation
-            lbz   cfn_ok          ; exclamation is valid character
-            smi   1               ; check for double quote
-            lbz  cfn_bad          ; double quote is invalid 
-            smi   8               ; next invalid character is asterisk
-            lbnf  cfn_ok 
-            lbz   cfn_bad         ; asterisk is invalid
-            smi   3               ; next valid character is dash
-            lbnf  cfn_bad         ; plus and comma are invalid
-            lbz   cfn_ok          ; dash is valid
-            smi   13              ; period, /, numbers 0 to 9 are valid
-            lbnf  cfn_ok          ; characters before colon are okay
-            smi   6               ; colon to question mark are invalid
-            lbnf  cfn_bad
-            smi   27              ; @, A-Z are valid characters
-            lbnf  cfn_ok
-            smi   3               ; [, \, ] are invalid
-            lbnf  cfn_bad
-            smi   29              ; caret,underscore, backtick, a - z are valid
-            lbnf  cfn_ok 
-            smi   3               ; tilde is only remaining valid char
-            lbz   cfn_ok
-            lbr   cfn_bad         ; everything else is not valid
+            smi   '.'             ; period is first valid character
+            lbnf  cfn_bad         ; characters before period are invalid
+            lbz   cfn_ok          ; period is valid character
+            
+            smi   12              ; next invalid character is the colon
+            lbnf  cfn_ok          ; forward slash and numbers 0 to 9 are valid
+            lbz   cfn_bad         ; colon is invalid
+            
+            smi   7               ; next valid character is uppercaee A
+            lbnf  cfn_bad         ; punctuation characters before A are invalid
+            lbz   cfn_ok          ; Capital A is valid
+            
+            smi   26              ; Left bracket is next invalid character           
+            lbnf  cfn_ok          ; characters A to Z before left bracket are okay
+            lbz   cfn_bad         ; Left brack is invalid
+            smi   4               ; underscore is next valid character
+            lbnf  cfn_bad         ; [, \, ] are invalid
+            lbz   cfn_ok          ; underscore is valid
+            
+            smi   2               ; next valid character is a
+            lbnf  cfn_bad         ; backtick is invalid
+            lbz   cfn_ok          ; lowercase a is valid
+            
+            smi   26              ; left brace is next invalid character 
+            lbnf  cfn_ok          ; lower case b-z are valid characters
+            lbr   cfn_bad         ; left brace and everything else is not valid
+            
 cfn_ok:     ldi   1               ; valid character
             lskp
 cfn_bad:    ldi   0               ; signal not valid
@@ -2359,7 +2403,6 @@ cfn_bad:    ldi   0               ; signal not valid
             ldx
             return                ; and return to caller
             endp           
-
 
             ;-------------------------------------------------------
             ; Name: set_status_cmd
@@ -2760,7 +2803,7 @@ rsp_cont:   call  reset_buf            ; advance to next spill file buffer
             call  set_cursor
             clc                       ; clear DF flag for return
 
-nsp_done:   pop   r9
+            pop   r9
             pop   ra
             pop   rf
             return                    
@@ -2932,6 +2975,15 @@ save_txt:     db  '^Q=Quit ^S=Save ^Y=SaveAs ',0
             ;-------------------------------------------------------            
             proc  spill_msg
 buf_txt:     db  'Buffering....',0
+            endp
+
+            ;-------------------------------------------------------
+            ; Name: eol_msg
+            ;
+            ; Status message when buffering spill files. 
+            ;-------------------------------------------------------            
+            proc  eol_msg
+eol_txt:     db  '** Maximum Line Length **',0
             endp
 
 

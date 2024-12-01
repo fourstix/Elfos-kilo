@@ -47,7 +47,30 @@ c_loop:
 #endif            
             
             call  o_readkey       ; get a keyvalue 
-            str   r2              ; save char at M(X)
+            ;----- move status message to just after read_key
+            ;----- probably better to move to after each decode  
+            stxd                  ; push character on stack
+
+#ifndef KILO_DEBUG    
+            load  rf, e_state     ; check refresh bit
+            ldn   rf
+            ani   STATUS_BIT      ; zero out all other bits, but status
+            lbz   c_rdy           ; if no status update, ready to process character
+            
+            call  kilo_status     ; update the status message
+            call  prt_status      ; update the status line
+            call  get_cursor
+            call  move_cursor
+
+            load  rf, e_state     ; clear status bit after update
+            ldn   rf
+            ani   STATUS_MASK     ; clear bit
+            str   rf              ; save updated editor state byte
+                         
+#endif
+c_rdy:      irx                   ; pop character into D
+            ldx                   ; char still at M(X)
+;            str   r2              ; save char at M(X)
         
             ; Check for printable or control char
             ; values (0-31 or 127) control
@@ -100,7 +123,7 @@ cprt_mode:  pop   r9              ; restore r9 with character to type
 cprt_ovr:   call  do_typeover     ; overwrite printable character            
             lbr   cprt_done       
             
-cprt_ins:   ghi   rb              ; get current line position
+cprt_ins:   glo   rb              ; get current line position
             smi   MAX_COL         ; check if at maximum
             lbdf  cprt_ovr        ; if at maximum, type over 
             call  do_typein       ; insert printable character            
@@ -250,11 +273,7 @@ c_ctrl:     load  rf, c_rpt       ; clear repeated character
             lbz   c_help          ; check for Ctrl-? (sometimes Ctrl-_)
             smi   96              ; check for DEL (Delete)            
             lbz   c_del
-#ifdef  KILO_DEBUG
-            ldx                 ; get char at M(X) 
-            plo     rd          ; save character in         
-            call    do_ctrl
-#endif            
+
             lbr   c_loop          ; ignore any unknown chracters  
 
             ;----- Control key actions
@@ -332,14 +351,7 @@ c_cut:      call  do_copy         ; copy a line into the clip board
             call  do_kill         ; delete the current line
             lbr   c_update
 
-#ifdef  KILO_DEBUG           
-c_unkn:     call  o_type          ; show unknown character in D
-            call  o_inmsg         ; indicate not terminated properly
-              db    '<?>',0
-            lbr   c_loop          ; continue processing                   
-#else 
 c_unkn:     lbr   c_loop          ; continue processing                   
-#endif
 
 #ifdef  KILO_HELP
 c_help:     call  do_help         ; show help information
@@ -390,27 +402,15 @@ c_redraw:   call  refresh_screen
 
 c_move:     call  o_inmsg
               db 27,'[?25l',0     ; hide cursor
-#ifdef KILO_DEBUG                  
-            call  prt_status_dbg  ; always show debug status line              
-#else 
             call  o_inmsg         ; reset cursor for move
               db 27,'[H',0
 
-            load  rf, e_state     ; check refresh bit
-            ldn   rf
-            ani   STATUS_BIT      ; zero out all other bits, but status
-            lbz   cm_cursor       ; if not status update, just move cursor
-            
-            call  kilo_status     ; update the status message
-            call  prt_status      ; update the status line
-            load  rf, e_state     ; clear status bit after update
-            ldn   rf
-            ani   STATUS_MASK     ; clear bit
-            str   rf              ; save updated editor state byte
-                         
+            ;----- show debug message here before move  
+#ifdef KILO_DEBUG                  
+            call  prt_status_dbg  ; always show debug status line              
 #endif
 
- cm_cursor: call  get_cursor
+            call  get_cursor
             call  move_cursor     ; move to new position
             call  o_inmsg
               db 27,'[?25h',0     ; show cursor        
@@ -518,10 +518,7 @@ del_move:   lda   rf              ; get next character
             ghi   rb              ; get the current line length
             smi   1               ; subtract one for deleted character
             phi   rb              ; update length
-            
-del_save:   load  rf, line_buf    ; set pointer to line buffer
-            inc   rf              ; skip dirty byte
-            call  update_line     ; update the line in text buffer
+
 del_okay:   clc                   ; clear DF flag for line update
             lbr   del_exit
             
@@ -559,7 +556,11 @@ del_exit:   pop   rd
             ;-------------------------------------------------------                       
             proc  do_end
             ghi   rb            ; get the line length
-            plo   rb            ; set character position to end of line
+;            smi   MAX_LINE      ; check for max length
+;            ghi   rb            ; restore line length, in case okay for column
+;            lbnf  de_set        ; if length < Max, just set it
+;            ldi   MAX_COL       ; otherwise set to max column              
+de_set:     plo   rb            ; set character position to end of line
             call  scroll_right  ; update cursor position
             return
             endp
@@ -576,7 +577,12 @@ del_exit:   pop   rd
             ;   r8 - current line 
             ;-------------------------------------------------------                                  
             proc  do_pgup
-            call  getcurln
+            load  rf, line_buf      ; set pointer to line buffer
+            lda   rf                ; check dirty byte, rf points to string
+            lbz   pup_rdy           ; if no change in line, ready to scroll
+            call  update_line       ; update line in txt buffer
+
+pup_rdy:    call  getcurln
             glo   r8                ; check for top of file
             lbnz  pup_cont          ; if r8 is non-zero, continue
             ghi   r8          
@@ -632,7 +638,12 @@ pup_skip:   return                  ; top row is new current row
             ;   r8 - current line 
             ;-------------------------------------------------------                                  
             proc do_pgdn
-            call  getcurln        ; get the current line
+            load  rf, line_buf    ; set pointer to line buffer
+            lda   rf              ; check dirty byte, rf points to string
+            lbz   pdwn_rdy        ; if no change in line, ready to scroll
+            call  update_line     ; update line in txt buffer
+
+pdwn_rdy:   call  getcurln        ; get the current line
             call  window_size     ; get the window dimensions
             ghi   r9              ; get the window size in rows
             smi   1               ; subtract one for status line
@@ -692,7 +703,12 @@ pdwn_size:  phi   rb              ; set line size for new line
             ;   rb.1 - new line size
             ;-------------------------------------------------------                                  
             proc  do_up
-            glo   r8                ; check for top of file
+            load  rf, line_buf      ; set pointer to line buffer
+            lda   rf                ; check dirty byte, rf points to string
+            lbz   up_rdy            ; if no change in line, ready to move cursor
+            call  update_line       ; update line in txt buffer
+
+up_rdy:     glo   r8                ; check for top of file
             lbnz  up_cont           ; if r8 is non-zero, continue
             ghi   r8          
             lbnz  up_cont           ; if r8 is non-zero, continue
@@ -734,15 +750,21 @@ up_skip:    return
             ;-------------------------------------------------------                                  
             proc  do_down
             push  r9                  ; save scratch register
-            call  get_num_lines       ; get the maximum lines
+            
+            load  rf, line_buf        ; set pointer to line buffer
+            lda   rf                  ; check dirty byte, rf points to string
+            lbz   dwn_rdy             ; if no change, ready to move cursor
+            call  update_line         ; update line in txt buffer
+            
+dwn_rdy:    call  get_num_lines       ; get the maximum lines
             call  getcurln            ; get current line
             sub16 r8,r9               ; check current line against limit
             lbnf  dwn_move            ; if current line < number lines, move down                
               
             ;-------------------------------------------------------                                  
             ; If bottom of buffer, move to next buffer  
-            ;-------------------------------------------------------
-            
+            ;-------------------------------------------------------                        
+
             load  rf, spill_cnt       ; get the spill count
             ldn   rf        
             lbz   dwn_skip            ; if no spill files, don't move
@@ -829,6 +851,9 @@ lft_exit:   return
             glo   rb            ; get the current position
             sm                  ; subtract line size from char position
             lbdf  rght_dwn      ; move to beginning of next line
+            glo   rb
+            smi   MAX_LINE      ; if at maximum column, move down
+            lbdf  rght_dwn
             inc   rb            ; otherwise increment char position
             call  scroll_right  ; scroll if needed, and adjust cursor              
 rght_exit:  return
@@ -914,16 +939,15 @@ ent_ins:    ldi   0             ; move to beginning column
             ani   $FC             ; mask sum to snap to next tab stop
             plo   r9              ; save in scratch register
             str   r2              ; save tab value in M(X)
-            ghi   rb              ; get line length
-            sm                    ; subtract next tab stop from column limit
-            lbdf  tab_move        ; if (line length >= tab stop), just move cursor             
             ldi   MAX_COL         ; check with the maximum column position
             sm
             lbnf  tab_exit        ; don't move past maximum line length
             ghi   rb              ; get line length
+            sm                    ; subtract next tab stop from column limit
+            lbdf  tab_move        ; if (line length >= tab stop), just move cursor             
+            ghi   rb              ; get line length
             sd                    ; get difference (tab stop - length)
             call  pad_line        ; pad line with spaces to tab stop
-            call  update_line     ; save padded line in buffer
 tab_stop:   glo   r9              ; get tab stop
             str   r2              ; save tab stop at M(X)
 tab_move:   ldx                   ; get next tab stop
@@ -968,8 +992,13 @@ btab_end:   return
             ;-------------------------------------------------------                                                
             proc  do_save
             push  rf              ; save register
-            
-            load  rf, save_msg    ; show initial save message
+
+            load  rf, line_buf    ; set pointer to line buffer
+            lda   rf              ; check dirty byte, rf points to string
+            lbz   ds_rdy          ; if no change in line, ready to save file
+            call  update_line     ; update line in txt buffer
+
+ds_rdy:     load  rf, save_msg    ; show initial save message
             call  set_status      ; show message set previously
             call  prt_status      
                         
@@ -978,7 +1007,7 @@ btab_end:   return
             ani   DIRTY_BIT       ; check the dirty bit
             lbz   ds_none         ; no changes to save
             
-            call  save_file     ; save file to disk
+            call  save_file       ; save file to disk
             lbdf  ds_error        ; DF = 1, means an error occurred
             load  rf, saved_msg   ; show file was saved 
             ldi   0               ; save DF result on stack
@@ -1023,7 +1052,13 @@ save_msg:     db 'Saving...',0
             ;-------------------------------------------------------                                                
             proc  do_top
             push  rf              ; save register used
-            load  rf, e_state     ; set refresh bit
+
+            load  rf, line_buf    ; set pointer to line buffer
+            lda   rf              ; check dirty byte, rf points to string
+            lbz   top_rdy         ; if no change in line, ready to move to top
+            call  update_line     ; update line in txt buffer
+
+top_rdy:    load  rf, e_state     ; set refresh bit
             ldn   rf              ; get editor state byte
             ori   REFRESH_BIT     
             str   rf
@@ -1070,12 +1105,17 @@ top_skip:   ldi   0                 ; set char position to far left
             ;-------------------------------------------------------
             ; Name: do_bottom
             ;
-            ; Handle the action when the Ctrl-T key is pressed
+            ; Handle the action when the Ctrl-Z key is pressed
             ;-------------------------------------------------------                                                
             proc  do_bottom
             push  rf                ; save register used
           
-            load  rf, e_state       ; set refresh bit
+            load  rf, line_buf      ; set pointer to line buffer
+            lda   rf                ; check dirty byte, rf points to string
+            lbz   db_rdy            ; if no change in line, ready to move to bottom
+            call  update_line       ; update line in txt buffer
+
+db_rdy:     load  rf, e_state       ; set refresh bit
             ldn   rf                ; get editor state byte
             ori   REFRESH_BIT     
             str   rf
@@ -1129,6 +1169,7 @@ db_exit:    pop   rf
             proc  do_kill
             push  rf              ; save registers used
             push  r9
+            ;---  no need to save changes in line buffer if deleting line
             
             ;----- set r8 for current line
             call  getcurln
@@ -1157,9 +1198,14 @@ dk_skip:    pop   r9
             ;-------------------------------------------------------                                                
             proc  do_insline
             push  rf              ; save registers used
-            
+      
+            load  rf, line_buf    ; set pointer to line buffer
+            lda   rf              ; check dirty byte, rf points to string
+            lbz   dins_rdy        ; if no change in line, ready to insert line
+            call  update_line     ; update line in txt buffer
+      
             ;----- set r8 for current line
-            call  getcurln
+dins_rdy:   call  getcurln
           
             load  rf, ins_blank   ; set rf to insert blank line
             call  insert_line
@@ -1203,8 +1249,13 @@ ins_blank:    db 13,10,0
             push  rd
             push  r8              ; save current line in case not found
             
+            load  rf, line_buf    ; set pointer to line buffer
+            lda   rf              ; check dirty byte, rf points to string
+            lbz   dc_rdy          ; if no change in line, ready to copy
+            call  update_line     ; update line in txt buffer
+
             ;----- set r8 for current line
-            call  getcurln
+dc_rdy:     call  getcurln
             call  find_line         ; get the current line of text
             ldn   ra                ; check size 
             lbz   dc_empty          ; if not found, just set to empty line
@@ -1220,6 +1271,12 @@ ins_blank:    db 13,10,0
             call  prt_status      
             call  get_cursor        ; restore cursor after status message update
             call  move_cursor
+
+            load  rf, e_state     ; set status bit for update
+            ldn   rf
+            ori   STATUS_BIT      ; set bit to reset status msg after eol msg
+            str   rf
+
             lbr   dc_exit
             
 dc_empty:   ldi   0                 ; set null for empty string
@@ -1246,9 +1303,14 @@ dc_copied:    db '*Line copied to clip board.*',0
             ;-------------------------------------------------------                                                
             proc  do_paste
             push  rf              ; save registers used
-            
+
+            load  rf, line_buf    ; set pointer to line buffer
+            lda   rf              ; check dirty byte, rf points to string
+            lbz   dp_rdy          ; if no change in line, ready to paste
+            call  update_line     ; update line in txt buffer
+
             ;----- set r8 for current line
-            call  getcurln
+dp_rdy:     call  getcurln
           
             load  rf, clip_brd    ; set rf to insert blank line
             call  insert_line
@@ -1286,7 +1348,12 @@ dc_copied:    db '*Line copied to clip board.*',0
             ;   DF = 0, line split in middle
             ;-------------------------------------------------------                                                
             proc  do_split
-            ghi   rb              ; get the line size
+            load  rf, line_buf    ; set pointer to line buffer
+            lda   rf              ; check dirty byte, rf points to string
+            lbz   split_rdy       ; if no change in line, ready to split
+            call  update_line     ; update line in txt buffer
+            
+split_rdy:  ghi   rb              ; get the line size
             lbz   splt_after      ; insert line if empty line
             
             str   r2              ; save line size in M(X)
@@ -1337,8 +1404,13 @@ splt_bfore: call  do_insline
             push  rf              ; save registers
             push  rd
             push  r9
+            load  rf, line_buf    ; set pointer to line buffer
+            lda   rf              ; check dirty byte, rf points to string
+            lbz   dw_rdy          ; if no change in line, ready to show location
+            call  update_line     ; update line in txt buffer
+
             
-            ldi   0               ; set up rd for converting column index
+dw_rdy:     ldi   0               ; set up rd for converting column index
             phi   rd
             glo   rb              ; copy column index for conversion
             plo   rd
@@ -1474,7 +1546,12 @@ dw_endtxt:    db ')',0
             push  rc
             push  r9               
             
-            ldi   0               ; set up character count
+            load  rf, line_buf    ; set pointer to line buffer
+            lda   rf              ; check dirty byte, rf points to string
+            lbz   dg_rdy          ; if no change in line, ready to goto location
+            call  update_line     ; update line in txt buffer
+
+dg_rdy:     ldi   0               ; set up character count
             phi   rc
             ldi   MAX_INTSTR      ; up to 5 characters in integer (0 to 65536)
             plo   rc
@@ -1650,7 +1727,12 @@ dc_invalid:   db 'Invalid file name. File not saved.',0
             push  rc
             push  r9               
 
-            ldi   0               ; set up character count
+            load  rf, line_buf    ; set pointer to line buffer
+            lda   rf              ; check dirty byte, rf points to string
+            lbz   df_rdy          ; if no change in line, ready to find string
+            call  update_line     ; update line in txt buffer
+
+df_rdy:     ldi   0               ; set up character count
             phi   rc
             ldi   MAX_TARGET      ; up to 40 characters in filename
             plo   rc
@@ -1775,8 +1857,12 @@ df_target:    ds MAX_TARGET+1
             ;-------------------------------------------------------                                                
             proc do_join
             push  r9              ; save register used
-            
-            call  getcurln        ; make sure r8 is at current line
+            load  rf, line_buf    ; set pointer to line buffer
+            lda   rf              ; check dirty byte, rf points to string
+            lbz   dj_rdy          ; if no change in line, ready to paste
+            call  update_line     ; update line in txt buffer
+      
+dj_rdy:     call  getcurln        ; make sure r8 is at current line
             call  is_eof          ; check if end of file, r9 has lines above eof
             lbdf  dj_none         ; nothing to join at eof, exit with DF set
             
@@ -1834,6 +1920,10 @@ dj_long:       db '*Lines too long to join!*',0
             ;-------------------------------------------------------                                                
             proc do_typeover
             push  rf
+            glo   rb              ; check character position
+            smi   MAX_LINE        ; check if one past max column
+            lbdf  to_stay         ; if past, don't type anything
+
             load  rf, line_buf    ; set pointer to line buffer
             ldi   $FF             ; set dirty flag to true
             str   rf
@@ -1866,19 +1956,33 @@ dj_long:       db '*Lines too long to join!*',0
             ldi   0               ; write NULL
             str   rf
             
-            ghi   rb              ; add one to line length
+            ghi   rb              ; check line length
+            smi   MAX_LINE        ; for max length
+            lbdf  to_done         ; don't go past maximum
+            
+            ghi   rb              ; otherwise add one to line length
             adi   1
             phi   rb  
 
 to_done:    glo   rb              ; check character position
             smi   MAX_COL         ; maximum column position
             lbdf  to_stay         ; if >= max, don't increment or move cursor
+
             inc   rb              ; move to next char position in line            
             call  scroll_right    ; scroll if needed, and adjust cursor              
+            lbr   to_exit         
             
-to_stay:    load  rf, line_buf    ; set pointer to line buffer
-            inc   rf              ; skip dirty byte
-            call  update_line     ; update the line
+to_stay:    load  rf, eol_msg     ; show max line size message
+            call  set_status
+            call  prt_status
+            call  get_cursor      ; restore cursor after status message update
+            call  move_cursor
+
+            load  rf, e_state     ; set status bit for update
+            ldn   rf
+            ori   STATUS_BIT      ; set bit to reset status msg after eol msg
+            str   rf
+
 to_exit:    pop   rf
             return
             endp  
@@ -1901,7 +2005,11 @@ to_exit:    pop   rf
             proc  do_typein
             push  rf              ; save registers
             push  rd
-            
+
+            ghi   rb              ; check line length
+            smi   MAX_LINE        ; with maximum line length
+            lbdf  ti_skip         ; if at limit, don't insert more characters
+
             load  rf, line_buf    ; set pointer to line buffer
             ldi   $FF             ; set dirty flag to true
             str   rf
@@ -1917,14 +2025,10 @@ to_exit:    pop   rf
             adci   0              ; add carry into high byte
             phi   rf              ; rf points to character in buffer
             copy  rf, rd          ; copy rf into destination pointer
-
-            glo   rb              ; check character position
-            smi   MAX_COL         ; with maximum column position
-            lbdf  ti_stay         ; if past, don't insert, just overwrite
             
 ti_fndend:  lda   rf              ; move rf to one past the end of string
             lbnz  ti_fndend
-            
+
 ti_shift:   str   rf              ; save value at one past original location
             dec   rf              ; move rf back to original location
             glo   rd              ; check if we moved last character
@@ -1952,15 +2056,22 @@ ti_moved:   glo   r9              ; get character from scratch register
 
             inc   rb              ; move to next char position in line            
             call  scroll_right    ; scroll if needed, and adjust cursor              
-            lbr   ti_done
+            lbr   ti_exit
             
-            ;---- if at the max column position don't update length or position
-ti_stay:    glo   r9              ; get the new character
-            str   rd              ; over write character at max column position
-      
-ti_done:    load  rf, line_buf    ; set pointer to line buffer
-            inc   rf              ; skip dirty byte
-            call  update_line     ; update the line
+            ;---- if at the max column position or max length don't insert 
+ti_skip:    load  rf, eol_msg     ; show max line size warning message
+            call  set_status
+            call  prt_status
+            call  get_cursor        ; restore cursor after status message update
+            call  move_cursor
+
+            load  rf, e_state     ; set status bit for update
+            ldn   rf
+            ori   STATUS_BIT      ; set bit to reset status msg after eol msg
+            str   rf
+            
+            call  do_typeover     ; instead type over 
+            
 ti_exit:    pop   rd              ; restore registers
             pop   rf
             return
@@ -2085,7 +2196,13 @@ di_exit:    pop   rd            ; restore register
             ;-------------------------------------------------------
             proc  do_quit
             push  rf              ; save register used
-            load  rf, e_state     ; get editor state byte  
+
+            load  rf, line_buf    ; set pointer to line buffer
+            lda   rf              ; check dirty byte, rf points to string
+            lbz   dq_rdy          ; if no change in line, ready to quit
+            call  update_line     ; update line in txt buffer
+
+dq_rdy:     load  rf, e_state     ; get editor state byte  
             ldn   rf
             ani   DIRTY_BIT       ; check the dirty bit
             lbnz  dq_ask          ; if changes, ask before exit
@@ -2132,7 +2249,12 @@ sure_str:     db 'Are you sure (Y/N)?',0
             proc  do_help
             push  rf              ; save register
 
-            load  rf, e_state     ; set refresh bit
+            load  rf, line_buf    ; set pointer to line buffer
+            lda   rf              ; check dirty byte, rf points to string
+            lbz   dh_rdy          ; if no change in line, ready to show help
+            call  update_line     ; update line in txt buffer
+
+dh_rdy:     load  rf, e_state     ; set refresh bit
             ldn   rf              ; get editor state byte
             ori   REFRESH_BIT     
             str   rf              ; refresh after showing help text
@@ -2202,30 +2324,3 @@ hlp_prmpt:    db ' Press any key',0
             endp
             
 #endif            
-            
-            
-#ifdef  KILO_DEBUG
-            ;-------------------------------------------------------
-            ; Unknown Control key handler - print the hex value
-            ; of the control key pressed.
-            ; Parameters: 
-            ;   rd.0 - control key value
-            ; Uses: 
-            ;   rf - buffer pointer
-            ; Returns: (None)       
-            ;-------------------------------------------------------
-            proc  do_ctrl
-            push    rf              ; save register used
-            load    rf, hex_buf     ; point rf to hex buffer
-            call    f_hexout2
-        
-            load    rf, hex_str     ; show string with hex value
-            call    o_msg
-            pop     rf              ; restore register
-            return
-            
-hex_str:  db 10,13,'{'
-hex_buf:  db 0,0
-          db '}',0                        
-            endp
-#endif
