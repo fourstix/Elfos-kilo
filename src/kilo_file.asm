@@ -579,6 +579,10 @@ readln3:    glo   re            ; recover byte
             str   rf            ; store into buffer
             inc   rf            ; point to next position
             inc   rc            ; increment character count
+            glo   rc            ; check for text longer than max line size
+            smi   MAX_LINE      ; read up to MAX_LINE characters
+            lbz   readln4       ; split long text into individual lines
+            
             call  readbyte      ; read next byte
             lbdf  readlneof     ; jump if end of file
             plo   re            ; keep a copy of read byte
