@@ -9,7 +9,7 @@
 ; Also based on the Elf/OS edit program written by Michael H Riley
 ; available https://github.com/rileym65/Elf-Elfos-edit
 ; -------------------------------------------------------------------
-; Copyright 2024 by Gaston Williams
+; Copyright 2025 by Gaston Williams
 ; -------------------------------------------------------------------
 ; Based on software written by Michael H Riley
 ; Thanks to the author for making this code available.
@@ -29,15 +29,9 @@
 ;#define  KILO_DEBUG  1
 
 ;-------------------------------------------------------------------------------
-; Uncomment to enable flow control (Xon/Xoff) 
-;-------------------------------------------------------------------------------
-;#define  KILO_FLOW   1
-
-;-------------------------------------------------------------------------------
 ; Comment out to remove Help information (about 1K in size) 
 ;-------------------------------------------------------------------------------
 #define  KILO_HELP  1
-
 
 ;-------------------------------------------------------------------------------
 ; Default Screen Size Constants
@@ -56,13 +50,22 @@
 #define SCREEN_TAB 16
 
 ;-------------------------------------------------------------------------------
-; Number Lines in single Buffer 
+; Number Lines in single Buffer
 ;-------------------------------------------------------------------------------
 #define BUF_LINES  96 
 
 
 ;-------------------------------------------------------------------------------
-; Editor State bits
+; Editor State byte
+;-------------------------------------------------------------------------------
+; Bit 7 - Dirty bit, true if file has unsaved changes
+; Bit 6 - Refresh bit, true if screen needs to be updated
+; Bit 5 - Mode bit, true = overwrite mode, false = insert mode
+; Bit 4 - New File bit, true if file is new
+; Bit 3 - Status bit, true if status message needs update
+; Bit 2 - Buffered I/O bit - true if serial I/O can be buffered
+; Bit 1 - Buffer Changed bit, true if buffer needs to be saved
+; Bit 0 - Error bit, true indincates a program error occured
 ;-------------------------------------------------------------------------------
 #define DIRTY_BIT     $80
 #define DIRTY_MASK    $7F
@@ -74,6 +77,8 @@
 #define NEWFILE_MASK  $EF
 #define STATUS_BIT    $08
 #define STATUS_MASK   $F7
+#define KBIO_BIT      $04
+#define KBIO_MASK     $FB
 #define BUFFER_CHG    $02
 #define BUFFER_MASK   $FD
 #define ERROR_BIT     $01
@@ -90,15 +95,10 @@
 #define SCREEN_MASK   $B7
 
 
-#ifdef  KILO_FLOW
-
 ;-------------------------------------------------------------------------------
-; Software Flow Control Characters
+; Circular Key Buffer Size
 ;-------------------------------------------------------------------------------
-#define XON   17
-#define XOFF  19
-
-#endif
+#define KEY_BUF_SIZE   32
 
 ;-------------------------------------------------------------------------------
 ; Utility routines used by kilo editor
@@ -166,12 +166,15 @@
             extrn   set_buf
             extrn   set_spill
             extrn   seek_buf_line
-            extrn   eol_msg
-
+  
 ;-------------------------------------------------------------------------------
 ; Key handler routines used by kilo editor
 ;-------------------------------------------------------------------------------
-
+            
+            extrn   get_key
+            extrn   flush_keys
+            extrn   keytail
+            extrn   keybuf
             extrn   do_kilo
             extrn   do_home
             extrn   do_mode

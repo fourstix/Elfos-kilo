@@ -9,7 +9,7 @@
 ; Also based on the Elf/OS edit program written by Michael H Riley
 ; available https://github.com/rileym65/Elf-Elfos-edit
 ; -------------------------------------------------------------------
-; Copyright 2021 by Gaston Williams
+; Copyright 2025 by Gaston Williams
 ; -------------------------------------------------------------------
 ; Based on software written by Michael H Riley
 ; Thanks to the author for making this code available.
@@ -27,10 +27,148 @@
 #include include/kernel.inc
 #include include/kilo_def.inc
 
+            extrn   eol_msg
+
 ; *******************************************************************
 ; ***                       Key Handlers                          ***
 ; *******************************************************************
 
+            ;-------------------------------------------------------
+            ; Name: get_key
+            ;
+            ; Read a key from either directly from the bit-banged
+            ; serial interface or from the hardware UART using a
+            ; circular buffer.  
+            ; 
+            ; Parameters: 
+            ; Uses: 
+            ;   rf - buffer pointer
+            ; Returns:
+            ;   D - character read
+            ;-------------------------------------------------------       
+.link  .align 128             
+            proc  get_key
+            
+            ; ******************************************************************
+            ; ***              Check if circular buffer in use               ***
+            ; ******************************************************************
+            load  rf, e_state     ; check key buffer bit in state byte
+            ani   KBIO_BIT        ; zero out all but kbio bit
+            lbz   o_readkey       ; delegate to kernel function if no buffer
+            
+            ; ******************************************************************
+            ; ***  Read characters from the hardware serial UART port using  ***
+            ; **   a circular buffer.  This routine is based on code written ***
+            ; ***  by David Madole in his studio serial driver.  Available   ***
+            ; ***  on GitHub: https://github.com/dmadole/Elfos-studio
+            ; ******************************************************************            
+
+gk_read:    call  f_utest         ; check for incoming serial character
+            bnf  gk_get           ; if no more keys available, get key from buffer 
+                     
+            call  f_uread         ; get character
+            plo   re              ; save key in scratch register
+            
+            ; ******************************************************************
+            ; ***             Put character in circular buffer               ***
+            ; ******************************************************************
+
+            load  rf, keytail     ; set rf to tail pointer            
+            lda   rf              ; get tail, move to head 
+            adi   1               ; increment tail porter
+            
+            sdi   keypast.0       ; check if we went past end of the buffer
+            bnz   gk_put          ; if we haven't reached the end we are good 
+                                  
+            ldi   KEY_BUF_SIZE    ; wrap around, keybuf.0 = keypast.0 - size                                            
+                        
+gk_put:     sdi   keypast.0       ; recover tail+1 value
+            sex   rf              ; compare tail+1 to head
+            sd                    ; if tail = head, then buffer is full
+            bz    gk_get          ; if full, don't add any more 
+            
+            sd                    ; recover tail value
+            sex   r2              ; make sure x = 2 for Elf/OS
+            
+            dec   rf              ; move back to tail ptr
+            str   rf              ; store new value in tail
+            plo   rf              ; set pointer to tail of buffer
+            glo   re              ; get character read from serial
+            str   rf              ; save in buffer
+            
+            ; br   gk_read         ; repeat until all keys are read into buffer
+            call  f_utest         ; check for more serial character
+            bdf   gk_read         ; if another came in, read into buffer
+                        
+
+            ; ******************************************************************
+            ; ***            Get character from circular buffer              ***
+            ; ******************************************************************
+gk_get:     load  rf, keytail     ; set rf to tail pointer
+            sex   rf              ; set x = rf for comparisons
+            lda   rf              ; if head pointer is same as tail,
+            xor                   ; then buffer is empty
+            sex   r2              ; set x back to r2 
+            bz    gk_read         ; if empty, read from serial
+            
+            ldn   rf              ; get head ptr
+            adi   1               ; increment head pointer
+
+            sdi   keypast.0       ; check if we went past the buffer
+            bnz   gk_good         ; if we haven't reached the end we are good 
+                      
+            ldi   KEY_BUF_SIZE    ; wrap around, keybuf.0 = keypast.0 - size             
+           
+gk_good:    sdi   keypast.0       ; recover head value
+            str   rf              ; update head pointer, then read
+            plo   rf              ; the data byte the head pointer
+            ldn   rf              ; points to as the character
+            return
+            
+keytail:      db keybuf.0           ; end of circular buffer
+keyhead:      db keybuf.0           ; beginning of circular buffer
+keybuf:       db 0                  ; circular buffer starts here
+              ds KEY_BUF_SIZE - 1   ; padding for rest of buffer entries
+keypast:      db 0                  ; one byte past buffer end
+              public  keytail
+              public  keybuf
+            endp   
+
+            ;-------------------------------------------------------
+            ; Name: flush_keys
+            ;
+            ; Read any keys available on the hardware UART and clear
+            ; the circular buffer.  
+            ; 
+            ; Parameters: 
+            ; Uses: 
+            ;   rf - buffer pointer
+            ; Returns: (none)
+            ;   character read
+            ;-------------------------------------------------------       
+            proc  flush_keys
+            load  rf, e_state     ; check if key buffer in use
+            ani   KBIO_BIT        ; zero out all but key buffer io bit
+            lbz   fk_exit         ; exit if no key buffer in use
+            
+fk_chk:     call  f_utest         ; check for incoming serial character
+            bnf   fk_reset        ; if no more keys available, reset buffer 
+                                 
+            call  f_uread         ; get character
+            lbr   fk_chk          ; keep going until no more incoming characters
+                                    
+fk_reset:   load  rf, keytail
+            ldi   keybuf.0        ; reset head and tail to buffer beginning
+            str   rf              ; reset keytail
+            inc   rf
+            str   rf              ; reset keyhead
+            inc   rf
+            ldi   0
+            str   rf              ; reset key buffer data
+            
+fk_exit:    return            
+            endp
+                  
             ;-------------------------------------------------------
             ; Name: do_kilo
             ;
@@ -38,19 +176,14 @@
             ; key handler until Ctrl+Q is pressed.
             ;-------------------------------------------------------       
             proc  do_kilo
-            ; reads character until ctrl+q is typed  
-c_loop:
-     
-#ifdef  KILO_FLOW
-            ldi   XON             
-            call  o_type          ; send xon to make sure transmission is on
-#endif            
+      
+            ; read characters until ctrl+q is typed  
+c_loop:     call  get_key         ; get a keyvalue 
             
-            call  o_readkey       ; get a keyvalue 
-            ;----- move status message to just after read_key
+            ;----- move status message to just after 
             ;----- probably better to move to after each decode  
             stxd                  ; push character on stack
-
+            
 #ifndef KILO_DEBUG    
             load  rf, e_state     ; check refresh bit
             ldn   rf
@@ -70,7 +203,6 @@ c_loop:
 #endif
 c_rdy:      irx                   ; pop character into D
             ldx                   ; char still at M(X)
-;            str   r2              ; save char at M(X)
         
             ; Check for printable or control char
             ; values (0-31 or 127) control
@@ -144,30 +276,24 @@ c_rptd:     ldx                   ; get character and check for repeated arrows
                 
 c_esc:      load  rf, c_rpt       ; clear repeated character
             ldi   0               ; for control sequence
-            str    rf
-            call  o_readkey       ; get control sequence introducer character
+            str   rf
+            call  get_key         ; get control sequence introducer character
+           
             str   r2              ; save character at M(X)  
             smi   '['             ; check for csi escape sequence
             lbz   sq_csi          ; <Esc>[ is a valid ANSI sequence
 
-            ldx                   ; get character and check for VT-52 arrows
-            smi   'A'             ; check for <ESC>A VT-52 sequence
-            lbnf  c_unkn          ; anything below 'A' is unknown
-            lbz   c_up            ; process Up Arrow key            
-            smi   1               ; check for <Esc>B
-            lbz   c_dwn           ; process Down Arrow key
-            smi   1               ; check for <Esc>C
-            lbz   c_rght          ; process Right Arrow key  
-            smi   1               ; check for <Esc>D
-            lbz   c_left          ; process Left Arrow key
-            lbnz  c_unkn          ; Anything else is an unknown sequence
+            ldx                   ; get character and check for VT-52 sequences
+            lbr   sq_vt52 
         
-sq_csi:     call  o_readkey       ; get csi character
-            stxd                  ; save character on stack
+sq_csi:     call  get_key         ; get csi character
+            
+sq_vt52:    stxd                  ; save character on stack
             smi   'A'             ; check for 3 character sequence
-            lbdf  sq_ok           ; A and above are 3 character
+            lbdf  sq_ok           ; A and above are 3 character sequences
 
-            call  o_readkey       ; get closing ~ for 4 char sequence
+            call  get_key         ; get closing ~ for 4 char sequence
+            
             smi   '~'
             lbz   sq_ok           ; properly closed continue
 
@@ -175,13 +301,7 @@ sq_csi:     call  o_readkey       ; get csi character
             ldx 
             lbr   c_unkn          ; print unknown escape seq message
         
-sq_ok:
-      
-#ifdef  KILO_FLOW
-            ldi   XOFF            
-            call  o_type          ; turn transmission off in case of repeated ANSI sequences
-#endif            
-            irx                   ; get character from stack 
+sq_ok:      irx                   ; get character from stack 
             ldx
             smi   49              ; check for <Esc>[1~ sequence
             lbz   c_home          ; process Home key
@@ -326,10 +446,22 @@ c_end:      call  do_end
             lbr   c_update
 
 c_pgup:     call  do_pgup
-            lbr   c_update      
+
+            load  rf, e_state     ; check for key buffer
+            ani   KBIO_BIT        ; zero all but kbio bit
+            lbz   cpup_nobuf       ; skip flush if no buffer in use
+            call  flush_keys      ; flush the key buffer            
+
+cpup_nobuf: lbr   c_update      
 
 c_pgdn:     call  do_pgdn
-            lbr   c_update
+            
+            load  rf, e_state     ; check for key buffer
+            ani   KBIO_BIT        ; zero all but kbio bit
+            lbz   cpdn_nobuf       ; skip flush if no buffer in use
+            call  flush_keys      ; flush the key buffer            
+            
+cpdn_nobuf: lbr   c_update
 
 c_find:     call  do_find
             lbdf  c_update        ; if found, update display                   
@@ -556,10 +688,6 @@ del_exit:   pop   rd
             ;-------------------------------------------------------                       
             proc  do_end
             ghi   rb            ; get the line length
-;            smi   MAX_LINE      ; check for max length
-;            ghi   rb            ; restore line length, in case okay for column
-;            lbnf  de_set        ; if length < Max, just set it
-;            ldi   MAX_COL       ; otherwise set to max column              
 de_set:     plo   rb            ; set character position to end of line
             call  scroll_right  ; update cursor position
             return
@@ -581,6 +709,10 @@ de_set:     plo   rb            ; set character position to end of line
             lda   rf                ; check dirty byte, rf points to string
             lbz   pup_rdy           ; if no change in line, ready to scroll
             call  update_line       ; update line in txt buffer
+            dec   rf              ; clear dirty byte
+            ldi   0               ; in line buffer
+            str   rf              ; after update
+
 
 pup_rdy:    call  getcurln
             glo   r8                ; check for top of file
@@ -594,6 +726,7 @@ pup_rdy:    call  getcurln
             call  prev_spill 
             lbdf  pup_skip          ; if no more buffers just skip
   
+            call  clear_screen    ; clear the screen
             call  refresh_screen
             call  kilo_status       ; restore the normal status messae
             call  prt_status
@@ -642,6 +775,10 @@ pup_skip:   return                  ; top row is new current row
             lda   rf              ; check dirty byte, rf points to string
             lbz   pdwn_rdy        ; if no change in line, ready to scroll
             call  update_line     ; update line in txt buffer
+            dec   rf              ; clear dirty byte
+            ldi   0               ; in line buffer
+            str   rf              ; after update
+
 
 pdwn_rdy:   call  getcurln        ; get the current line
             call  window_size     ; get the window dimensions
@@ -678,7 +815,8 @@ pdwn_rdy:   call  getcurln        ; get the current line
             
 pdwn_last:  call  find_eob        ; otherwise find the end of current buffer
             dec   r8              ; go back to last text line
-            call  find_line       ; get the last line            
+            call  find_line       ; get the last line
+            lbdf  pdwn_exit       ; if not found, just exit            
             
 pdwn_ok:    call  setcurln        ; set the new currentline
             ldn   ra              ; get the line size of new current line
@@ -688,7 +826,7 @@ pdwn_ok:    call  setcurln        ; set the new currentline
 pdwn_size:  phi   rb              ; set line size for new line
             call  put_line_buffer ; put current line in line buffer
             call  scroll_down     ; calculate new row offset 
-            return
+pdwn_exit:  return
             endp
 
             ;-------------------------------------------------------
@@ -707,6 +845,10 @@ pdwn_size:  phi   rb              ; set line size for new line
             lda   rf                ; check dirty byte, rf points to string
             lbz   up_rdy            ; if no change in line, ready to move cursor
             call  update_line       ; update line in txt buffer
+            dec   rf                ; clear dirty byte
+            ldi   0                 ; in line buffer
+            str   rf                ; after update
+
 
 up_rdy:     glo   r8                ; check for top of file
             lbnz  up_cont           ; if r8 is non-zero, continue
@@ -719,6 +861,7 @@ up_rdy:     glo   r8                ; check for top of file
             call  prev_spill 
             lbdf  up_skip           ; if no more buffers just skip
   
+            call  clear_screen      ; clear the screen
             call  refresh_screen
             call  kilo_status       ; restore the normal status messae
             call  prt_status
@@ -755,6 +898,10 @@ up_skip:    return
             lda   rf                  ; check dirty byte, rf points to string
             lbz   dwn_rdy             ; if no change, ready to move cursor
             call  update_line         ; update line in txt buffer
+            dec   rf                  ; clear dirty byte
+            ldi   0                   ; in line buffer
+            str   rf                  ; after update
+
             
 dwn_rdy:    call  get_num_lines       ; get the maximum lines
             call  getcurln            ; get current line
@@ -997,8 +1144,12 @@ btab_end:   return
             lda   rf              ; check dirty byte, rf points to string
             lbz   ds_rdy          ; if no change in line, ready to save file
             call  update_line     ; update line in txt buffer
+            dec   rf              ; clear dirty byte
+            ldi   0               ; in line buffer
+            str   rf              ; after update
 
-ds_rdy:     load  rf, save_msg    ; show initial save message
+
+ds_rdy:     load  rf, saving_msg  ; show initial message
             call  set_status      ; show message set previously
             call  prt_status      
                         
@@ -1042,7 +1193,7 @@ ds_show:    call  set_status      ; show message set previously
 clean_msg:    db 'No file changes to save.',0
 saved_msg:    db '* File Saved. *',0
 saved_err:    db '* ERROR Saving File. *',0
-save_msg:     db 'Saving...',0
+saving_msg:   db 'Saving...',0
             endp
 
             ;-------------------------------------------------------
@@ -1057,6 +1208,10 @@ save_msg:     db 'Saving...',0
             lda   rf              ; check dirty byte, rf points to string
             lbz   top_rdy         ; if no change in line, ready to move to top
             call  update_line     ; update line in txt buffer
+            dec   rf              ; clear dirty byte
+            ldi   0               ; in line buffer
+            str   rf              ; after update
+
 
 top_rdy:    load  rf, e_state     ; set refresh bit
             ldn   rf              ; get editor state byte
@@ -1075,6 +1230,7 @@ top_rdy:    load  rf, e_state     ; set refresh bit
             call  prev_spill 
             lbdf  top_skip          ; if no more buffers just skip
   
+            call  clear_screen    ; clear the screen
             call  refresh_screen
             call  kilo_status       ; restore the normal status messae
             call  prt_status
@@ -1114,6 +1270,10 @@ top_skip:   ldi   0                 ; set char position to far left
             lda   rf                ; check dirty byte, rf points to string
             lbz   db_rdy            ; if no change in line, ready to move to bottom
             call  update_line       ; update line in txt buffer
+            dec   rf              ; clear dirty byte
+            ldi   0               ; in line buffer
+            str   rf              ; after update
+
 
 db_rdy:     load  rf, e_state       ; set refresh bit
             ldn   rf                ; get editor state byte
@@ -1170,9 +1330,14 @@ db_exit:    pop   rf
             push  rf              ; save registers used
             push  r9
             ;---  no need to save changes in line buffer if deleting line
+            call  get_num_lines
+            ghi   r9              ; check current count of lines
+            lbnz  dk_cont         ; if non-zero continue on
+            glo   r9              ; check low byte of count
+            lbz   dk_skip         ; if no lines left, just quit
             
             ;----- set r8 for current line
-            call  getcurln
+dk_cont:    call  getcurln
             call  is_eof          ; check if line index points to end of file
             lbdf  dk_skip         ; if line not deleted, skip update
             
@@ -1253,6 +1418,10 @@ ins_blank:    db 13,10,0
             lda   rf              ; check dirty byte, rf points to string
             lbz   dc_rdy          ; if no change in line, ready to copy
             call  update_line     ; update line in txt buffer
+            dec   rf              ; clear dirty byte
+            ldi   0               ; in line buffer
+            str   rf              ; after update
+
 
             ;----- set r8 for current line
 dc_rdy:     call  getcurln
@@ -1308,6 +1477,10 @@ dc_copied:    db '*Line copied to clip board.*',0
             lda   rf              ; check dirty byte, rf points to string
             lbz   dp_rdy          ; if no change in line, ready to paste
             call  update_line     ; update line in txt buffer
+            dec   rf              ; clear dirty byte
+            ldi   0               ; in line buffer
+            str   rf              ; after update
+
 
             ;----- set r8 for current line
 dp_rdy:     call  getcurln
@@ -1352,6 +1525,10 @@ dp_rdy:     call  getcurln
             lda   rf              ; check dirty byte, rf points to string
             lbz   split_rdy       ; if no change in line, ready to split
             call  update_line     ; update line in txt buffer
+            dec   rf              ; clear dirty byte
+            ldi   0               ; in line buffer
+            str   rf              ; after update
+
             
 split_rdy:  ghi   rb              ; get the line size
             lbz   splt_after      ; insert line if empty line
@@ -1408,6 +1585,10 @@ splt_bfore: call  do_insline
             lda   rf              ; check dirty byte, rf points to string
             lbz   dw_rdy          ; if no change in line, ready to show location
             call  update_line     ; update line in txt buffer
+            dec   rf              ; clear dirty byte
+            ldi   0               ; in line buffer
+            str   rf              ; after update
+
 
             
 dw_rdy:     ldi   0               ; set up rd for converting column index
@@ -1430,45 +1611,18 @@ dw_hdr:     lda   rf              ; copy column header into msg buffer
 
 dw_cnumbr:  load  rf, num_buf
 dw_cnum:    lda   rf              ; copy column number into msg buffer
-            lbz   dw_ln           ; add text before line
+            lbz   dw_sp_1         ; check for spill buffers
             str   rd
             inc   rd
             lbr   dw_cnum
-
-dw_ln:      load  rf, dw_lntxt      
-dw_line:    lda   rf              ; copy line label into msg buffer
-            lbz   dw_lnumbr       ; then add line number
-            str   rd
-            inc   rd
-            lbr   dw_line
-
-
-dw_lnumbr:  push  rd              ; save msg buffer pointer
-            call  getcurln        ; get current line index
-            copy  r8, r9          ; copy current line to convert to buffer value
-            call  get_buf_line    ; convert to line value in buffer
-            copy  r9, rd          ; copy index for conversion to ask        
-            inc   rd              ; add one to index to get 1 based number
-            load  rf, num_buf     
-            call  f_uintout       ; convert to integer ascii string
-            ldi   0               ; make sure null terminated
-            str   rf              
-            pop   rd              ; restore msg buffer pointer
             
-            load  rf, num_buf     
-dw_lnum:    lda   rf              ; copy line number into msg buffer
-            lbz   dw_buffer       ; check for buffer message        
-            str   rd
-            inc   rd
-            lbr   dw_lnum   
-            
-dw_buffer:  load  rf, spill_cnt   ; get the spill count
+dw_sp_1:    load  rf, spill_cnt   ; get the spill count
             ldn   rf        
-            lbz   dw_show         ; if no spill files, message is done
+            lbz   dw_ln_sp        ; if no spill files, line separator
             
             load  rf, dw_bftxt      
-dw_buf:     lda   rf              ; copy line label into msg buffer
-            lbz   dw_bnumbr       ; then add line number
+dw_buf:     lda   rf              ; copy buffer label into msg buffer
+            lbz   dw_bnumbr       ; then add buffer number
             str   rd
             inc   rd
             lbr   dw_buf
@@ -1488,19 +1642,85 @@ dw_bnumbr:  push  rd              ; save msg buffer pointer
            
             load  rf, num_buf     
 dw_bnum:    lda   rf              ; copy buffer number into msg buffer
-            lbz   dw_bend         ; end buffer message        
+            lbz   dw_row          ; add row lable to buffer message        
             str   rd
             inc   rd
             lbr   dw_bnum   
-            
-dw_bend:    load  rf, dw_endtxt      
-dw_bend2:   lda   rf              ; copy closing text into msg buffer
-            lbz   dw_show         ; show message with buffer number
+
+dw_row:     load  rf, dw_rwtxt      
+dw_row2:    lda   rf              ; copy row label into msg buffer
+            lbz   dw_rnumbr       ; then add row number
             str   rd
             inc   rd
-            lbr   dw_bend2
-        
+            lbr   dw_row2
 
+dw_rnumbr:  push  rd              ; save msg buffer pointer
+            call  getcurln        ; get current line index
+            copy  r8, rd          ; copy row index for conversion to ascii        
+            inc   rd              ; add one to index to get 1 based number
+            load  rf, num_buf     
+            call  f_uintout       ; convert to integer ascii string
+            ldi   0               ; make sure null terminated
+            str   rf              
+            pop   rd              ; restore msg buffer pointer
+            
+            load  rf, num_buf     
+dw_rnum:    lda   rf              ; copy row number into msg buffer
+            lbz   dw_ln_sp2       ; end buffer message        
+            str   rd
+            inc   rd
+            lbr   dw_rnum   
+
+dw_ln_sp:   ldi   ','             ; if no buffers, separate with comma and space
+            str   rd
+            inc   rd
+            ldi   ' '
+            str   rd
+            inc   rd 
+            lbr   dw_ln           ; print the line number
+            
+dw_ln_sp2:  ldi   ' '             ; put space after row number
+            str   rd
+            inc   rd
+            ldi   '('             ; and parenthesis to indicate computed line
+            str   rd
+            inc   rd
+
+dw_ln:      load  rf, dw_lntxt      
+dw_line:    lda   rf              ; copy line label into msg buffer
+            lbz   dw_lnumbr       ; then add line number
+            str   rd
+            inc   rd
+            lbr   dw_line
+
+dw_lnumbr:  push  rd              ; save msg buffer pointer
+            call  getcurln        ; get current line index
+            copy  r8, r9          ; copy current line to convert to buffer value
+            call  get_buf_line    ; convert to line value in buffer
+            copy  r9, rd          ; copy index for conversion to ask        
+            inc   rd              ; add one to index to get 1 based number
+            load  rf, num_buf     
+            call  f_uintout       ; convert to integer ascii string
+            ldi   0               ; make sure null terminated
+            str   rf              
+            pop   rd              ; restore msg buffer pointer
+            
+            load  rf, num_buf     
+dw_lnum:    lda   rf              ; copy line number into msg buffer
+            lbz   dw_sp_2         ; check for spill buffera again        
+            str   rd
+            inc   rd
+            lbr   dw_lnum   
+
+dw_sp_2:    load  rf, spill_cnt   ; get the spill count
+            ldn   rf        
+            lbz   dw_show         ; if no spill files, we are done
+
+            
+dw_bend:    ldi   ')'             ; close parenthesis after computed line number
+            str   rd
+            inc   rd
+        
 dw_show:    ldi   0               ; make sure message ends in null
             str   rd
             load  rf, work_buf    ; show the location message
@@ -1519,9 +1739,9 @@ dw_show:    ldi   0               ; make sure message ends in null
             pop   rf
             return
 dw_coltxt:    db 'Column ',0
-dw_lntxt:     db ', Line ',0
-dw_bftxt:     db ', (Buffer ',0
-dw_endtxt:    db ')',0
+dw_lntxt:     db 'Line ',0
+dw_bftxt:     db ', Buffer ',0
+dw_rwtxt:     db ', Row ',0
             endp
 
             ;-------------------------------------------------------
@@ -1550,6 +1770,10 @@ dw_endtxt:    db ')',0
             lda   rf              ; check dirty byte, rf points to string
             lbz   dg_rdy          ; if no change in line, ready to goto location
             call  update_line     ; update line in txt buffer
+            dec   rf              ; clear dirty byte
+            ldi   0               ; in line buffer
+            str   rf              ; after update
+
 
 dg_rdy:     ldi   0               ; set up character count
             phi   rc
@@ -1731,10 +1955,14 @@ dc_invalid:   db 'Invalid file name. File not saved.',0
             lda   rf              ; check dirty byte, rf points to string
             lbz   df_rdy          ; if no change in line, ready to find string
             call  update_line     ; update line in txt buffer
+            dec   rf              ; clear dirty byte
+            ldi   0               ; in line buffer
+            str   rf              ; after update
+
 
 df_rdy:     ldi   0               ; set up character count
             phi   rc
-            ldi   MAX_TARGET      ; up to 40 characters in filename
+            ldi   MAX_TARGET      ; up to 40 characters in target
             plo   rc
             load  rf, df_prmpt    ; set prompt to enter search string
             call  do_input        ; prompt user to enter string
@@ -1861,6 +2089,10 @@ df_target:    ds MAX_TARGET+1
             lda   rf              ; check dirty byte, rf points to string
             lbz   dj_rdy          ; if no change in line, ready to paste
             call  update_line     ; update line in txt buffer
+            dec   rf              ; clear dirty byte
+            ldi   0               ; in line buffer
+            str   rf              ; after update
+
       
 dj_rdy:     call  getcurln        ; make sure r8 is at current line
             call  is_eof          ; check if end of file, r9 has lines above eof
@@ -1985,6 +2217,9 @@ to_stay:    load  rf, eol_msg     ; show max line size message
 
 to_exit:    pop   rf
             return
+              ; Warning message for when line length reaches limit 
+eol_msg:      db  '* Maximum Line Length *',0
+            public eol_msg
             endp  
 
             ;-------------------------------------------------------
@@ -2076,6 +2311,7 @@ ti_exit:    pop   rd              ; restore registers
             pop   rf
             return
             endp  
+    
             
 ; *******************************************************************
 ; ***                 Control Key Handlers                        ***
@@ -2097,7 +2333,8 @@ ti_exit:    pop   rd              ; restore registers
             call  set_status
             call  prt_status      
                         
-            call  o_readkey     ; get a keyvalue response 
+            call  get_key       ; get a keyvalue response
+            
             stxd                ; save char on stack
             call  kilo_status   ; restore status message
             call  prt_status    ; update status message
@@ -2112,15 +2349,19 @@ ti_exit:    pop   rd              ; restore registers
             ldx                 ; get character again from M(X)
             smi   27            ; check for escape character (ANSI sequence)
             lbnz  dc_no 
-            call  o_readkey     ; eat ansi sequences
+            
+            call  get_key       ; eat ansi sequences
+            
             smi   '['           ; check for csi escape sequence
             lbnz  dc_no         ; Anything but <Esc>[ is not ANSI, so done
                     
-            call  o_readkey     ; eat next character
+            call  get_key       ; eat next character
+            
             smi   'A'           ; check for 3 character sequence (arrows)
             lbdf  dc_no         ; A and above are 3 character, so we are done
             
-            call  o_readkey     ; eat closing ~ for 4 char sequence (PgUp, PgDn, Home, End)
+            call  get_key       ; eat closing ~ for 4 char sequence (PgUp, PgDn, Home, End)
+
 dc_no:      clc                 ; DF = 0, means No response
             lbr   dc_exit
 dc_yes:     stc                 ; DF = 1, means Yes response
@@ -2145,15 +2386,20 @@ dc_exit:    return
             ;-------------------------------------------------------  
             proc  do_input                                
             push  rd            ; save registers
+            push  rb
             
+            copy  rf, rb        ; save copy of pointer to input message
             load  rd, work_buf  ; set destination to working buffer
             ldi   0
             str   rd            ; set buffer to empty string
             
-di_read:    call  set_input     ; show prompt with current input
+di_read:    copy  rb, rf        ; restore input prompt from copy
+            call  set_input     ; show prompt with current input
             call  prt_status      
 
-            call  o_readkey     ; get a key value response
+            call  get_key       ; get a key value response
+
+            
             str   r2            ; save at M(X) 
             smi   32            ; check for control character (below space)
             lbnf  di_end
@@ -2177,11 +2423,10 @@ di_end:     call  get_cursor    ; restore cursor after questions
             stc                 ; DF = 1, for input
             lbr   di_exit       
 di_none:    clc                 ; DF = 0, for no input
-di_exit:    pop   rd            ; restore register
+di_exit:    pop   rb            ; restore registers
+            pop   rd
             return
             endp
-
-
 
             ;-------------------------------------------------------
             ; Name: do_quit
@@ -2201,6 +2446,10 @@ di_exit:    pop   rd            ; restore register
             lda   rf              ; check dirty byte, rf points to string
             lbz   dq_rdy          ; if no change in line, ready to quit
             call  update_line     ; update line in txt buffer
+            dec   rf              ; clear dirty byte
+            ldi   0               ; in line buffer
+            str   rf              ; after update
+
 
 dq_rdy:     load  rf, e_state     ; get editor state byte  
             ldn   rf
@@ -2253,6 +2502,10 @@ sure_str:     db 'Are you sure (Y/N)?',0
             lda   rf              ; check dirty byte, rf points to string
             lbz   dh_rdy          ; if no change in line, ready to show help
             call  update_line     ; update line in txt buffer
+            dec   rf              ; clear dirty byte
+            ldi   0               ; in line buffer
+            str   rf              ; after update
+
 
 dh_rdy:     load  rf, e_state     ; set refresh bit
             ldn   rf              ; get editor state byte
@@ -2262,7 +2515,7 @@ dh_rdy:     load  rf, e_state     ; set refresh bit
             call  o_inmsg
               db 27,'[?25l',0     ; hide cursor        
 
-            call    o_inmsg       ; position cursor at 4,4
+            call  o_inmsg       ; position cursor at 4,4
               db 27,'[4;0H',0
               
             call  o_inmsg

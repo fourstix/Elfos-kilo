@@ -9,7 +9,7 @@
 ; Also based on the Elf/OS edit program written by Michael H Riley
 ; available https://github.com/rileym65/Elf-Elfos-edit
 ; -------------------------------------------------------------------
-; Copyright 2021 by Gaston Williams
+; Copyright 2025 by Gaston Williams
 ; -------------------------------------------------------------------
 ; Based on software written by Michael H Riley
 ; Thanks to the author for making this code available.
@@ -36,7 +36,6 @@
             extrn   col_offset
             extrn   temp_buf
             extrn   status_msg
-            extrn   save_msg
             extrn   status_cmd
             
 ; *******************************************************************
@@ -83,8 +82,21 @@
             ani   $fe             ; clear the echo bit
             phi   re              ; restore serial byte with echo off
 
+            ;----- set the key buffer I/O bit
+            ghi   re              ; re.1 = 0 means hardware uart
+            lbnz  bk_cont         ; don't buffer, bit-banged serial I/O
+            
+            load  rf, o_readkey+1 ; check kernel vector for readkey function
+            smi   $F8             ; $F800 and higher are BIOS ROM
+            lbnf  bk_cont         ; don't buffer, if vector has been redirected
+            
+            load  rf, e_state     ; otherwise, set bit in state byte
+            ldn   rf              ; get current state byte
+            ori   KBIO_BIT        ; set bit to buffer serial I/O
+            str   rf              ; save updated byte
+
             ;------ initialize screen window height and width
-            call  set_window_size
+bk_cont:    call  set_window_size
 
             call  set_status_cmd  ; set the ANSI command for status location
                                                                         
@@ -641,6 +653,7 @@ eof_exit:   pop   rf
             proc  scroll_up
             push  rf
             push  r9
+            
             glo   rb              ; get current character position
             str   r2              ; save in M(X) for arithmetic
             ghi   rb              ; get size of line
@@ -662,6 +675,9 @@ sup_x_ok:   call  set_col_offset  ; set the column offset
             lbdf  no_upscrl       ; if current row >= row offset, no scroll
             call  set_row_offset  ; set row offset to current line
 no_upscrl:  call  set_cursor      ; update cursor position
+
+            call  flush_keys      ; flush the key buffer                                           
+
             pop  r9               ; restore registers
             pop  rf 
             return
@@ -736,6 +752,8 @@ sdn_x_ok:   call  set_col_offset  ; set the column offset
 
 no_dnscrl:  call  set_cursor      ; adjust the cursor position
 
+            call  flush_keys      ; flush the key buffer                                           
+
             pop   r8              ; restore registers used
             pop   r9  
             pop   rc
@@ -780,6 +798,9 @@ lfs_updt:   str   rf              ; set new column offset
             lda   rf              ; get dirty byte, rf points to string
             lbz   lfs_line        ; if no change in line, ready to scroll
             call  update_line     ; update line in txt buffer for refresh
+            dec   rf              ; clear dirty byte
+            ldi   0
+            str   rf
 
 lfs_line:   load  rf, e_state     ; set refresh bit
             ldn   rf
@@ -845,6 +866,10 @@ rts_adj:    ldn   rf              ; get column offset
             lda   rf              ; get dirty byte, rf points to string
             lbz   rts_line        ; if no change in line, ready to scroll
             call  update_line     ; update line in txt buffer for refresh
+            dec   rf              ; clear dirty byte
+            ldi   0
+            str   rf              ; after line was saved
+
 
 rts_line:   load  rf, e_state     ; set refresh bit
             ldn   rf
@@ -2206,8 +2231,8 @@ pad_done:   ldi   13            ; write CR (10)
             push  rd
             push  rc 
             
-            ;------ save prompt comes first
-            load  rf, save_msg
+            ;------ default prompt comes first
+            load  rf, ds_default
             load  rd, work_buf
 ds_prompt:  lda   rf 
             lbz   ds_state        ; copy save prompt into buffer
@@ -2267,6 +2292,13 @@ ds_done:    ldi   0
 ds_insert:    db '[Ins] ',0
 ds_over:      db '<Over> ',0
 ds_newmsg:    db ' (New)',0
+
+#ifdef  KILO_HELP            
+ds_default:   db  '^Q=Quit ^S=Save ^Y=SaveAs ^?=Help ',0
+#else
+ds_default:   db  '^Q=Quit ^S=Save ^Y=SaveAs ',0
+#endif
+
             endp
             
 ; *******************************************************************
@@ -2376,7 +2408,7 @@ ss_exit:    pop   r9          ; restore sratch registers
             lbnf  cfn_ok          ; forward slash and numbers 0 to 9 are valid
             lbz   cfn_bad         ; colon is invalid
             
-            smi   7               ; next valid character is uppercaee A
+            smi   7               ; next valid character is uppercase A
             lbnf  cfn_bad         ; punctuation characters before A are invalid
             lbz   cfn_ok          ; Capital A is valid
             
@@ -2635,7 +2667,7 @@ sb_err:     stc
             push  rf                  ; save registers used
             push  ra
             push  r9
-            
+                        
             load  rf, e_state         ; get editor state byte  
             ldn   rf            
             ani   BUFFER_CHG          ; check buffer changed bit
@@ -2662,6 +2694,9 @@ nsp_load:   load  rf, spill_msg       ; show a message
             call  setcurln            ; set the current line in text buffer
             call  set_row_offset      ; set row offset for the top of screen
             call  set_cursor
+
+            call  flush_keys          ; flush the key buffer                                           
+                        
             clc                       ; clear DF flag for return
             lbr   nsp_done
             
@@ -2713,36 +2748,26 @@ psp_load:   load  rf, spill_msg       ; show a message
             copy  ra, r8              ; copy number of lines in buffer 
             call  set_num_lines       ; set the maximum line value in memory 
                 
-            call  get_num_lines       ; get total number of lines in r9
-            dec   r9                  ; line index is one less than number of lines
-            copy  r9,r8               ; set current line to last line
-            
-            call  window_size       ; get the window dimensions
-            ghi   r9                ; get the window size in rows
-            smi   2                 ; subtract 1 for status line            
-            str   r2                ; save rows in M(X)
-            glo   r8                ; get low byte of top line
-            sm                      ; subtract row size from from top row
-            plo   r8
-            ghi   r8                ; adjust high byte for borrow
-            smbi  0                 ; subtract borrow from hi byte
-            phi   r8          
-            lbdf  psp_ok            ; if positive, then top row is valid
-            
-            ldi   0                 ; if negative, set top row to zero
-            phi   r8
-            plo   r8 
-psp_ok:     call  setcurln          ; save the current line
+                
+            call  get_num_lines     ; get total number of lines in r8
+            dec   r9                ; line index is one less than number of lines
+            copy  r9,r8             ; set current line to last line
+            call  setcurln          ; save the current line
             call  find_line         ; get the current line
+            
             ldn   ra                ; get size of current line
             smi   2                 ; adjust for one past last character
             lbdf  psp_size          ; if positive, set length
             ldi   0                 ; if negative, set length to zero
 psp_size:   phi   rb                ; set rb.1 to new size
-            call  scroll_up         ; set top row to new value
-   
-            call  set_row_offset    ; set row offset for the top of screen
-            call  set_cursor
+            call  put_line_buffer   ; put current line in line buffer
+;            ghi   rb                ; set char position to end of last line
+            ldi   0                 ; set char postion to beginning of last line
+            plo   rb  
+            call  scroll_down       ; set top row to new value
+    
+            call  flush_keys        ; flush the key buffer                                           
+
             clc                     ; clear DF flag for return
             lbr   psp_done          ; exit routine
             
@@ -2955,18 +2980,18 @@ sbl_err:    stc                       ; clear DF for error
 ; ***                   Strings and Buffers                       ***
 ; *******************************************************************
 
-            ;-------------------------------------------------------
-            ; Name: save_msg
-            ;
-            ; Status message to save files. 
-            ;-------------------------------------------------------            
-            proc  save_msg
-#ifdef  KILO_HELP            
-save_txt:     db  '^Q=Quit ^S=Save ^Y=SaveAs ^?=Help ',0
-#else
-save_txt:     db  '^Q=Quit ^S=Save ^Y=SaveAs ',0
-#endif
-            endp
+;            ;-------------------------------------------------------
+;            ; Name: save_msg
+;            ;
+;            ; Status message to save files. 
+;            ;-------------------------------------------------------            
+;            proc  save_msg
+;#ifdef  KILO_HELP            
+;save_txt:     db  '^Q=Quit ^S=Save ^Y=SaveAs ^?=Help ',0
+;#else
+;save_txt:     db  '^Q=Quit ^S=Save ^Y=SaveAs ',0
+;#endif
+;            endp
 
             ;-------------------------------------------------------
             ; Name: spill_msg
@@ -2974,19 +2999,9 @@ save_txt:     db  '^Q=Quit ^S=Save ^Y=SaveAs ',0
             ; Status message when buffering spill files. 
             ;-------------------------------------------------------            
             proc  spill_msg
-buf_txt:     db  'Buffering....',0
+buf_txt:     db  'Buffering...',0
             endp
-
-            ;-------------------------------------------------------
-            ; Name: eol_msg
-            ;
-            ; Status message when buffering spill files. 
-            ;-------------------------------------------------------            
-            proc  eol_msg
-eol_txt:     db  '** Maximum Line Length **',0
-            endp
-
-
+            
             ;-------------------------------------------------------
             ; Name: status_msg
             ;
@@ -3068,7 +3083,7 @@ sp_cnt:       db  0
             ;-------------------------------------------------------            
             proc  sname
               db '__kilo.'
-spl_idx:      db '00',0,           ;default is zero
+spl_idx:      db '00',0           ;default is zero
 
               public    spl_idx
             endp

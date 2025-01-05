@@ -9,7 +9,7 @@
 ; Also based on the Elf/OS edit program written by Michael H Riley
 ; available https://github.com/rileym65/Elf-Elfos-edit
 ; -------------------------------------------------------------------
-; Copyright 2021 by Gaston Williams
+; Copyright 2025 by Gaston Williams
 ; -------------------------------------------------------------------
 ; Based on software written by Michael H Riley
 ; Thanks to the author for making this code available.
@@ -688,7 +688,7 @@ sf_done:    call  o_close       ; close the file
 
             load  rf, e_state   ; get editor state byte  
             ldn   rf            
-            ani   FILE_CHG_MASK ; clear dirty and buffer changed bits
+            ani   SAVED_MASK    ; clear new, dirty and buffer changed bits
             str   rf
             clc                 ; clear DF for success
             
@@ -800,29 +800,6 @@ cb_exit:    pop   r7            ; restore registers used
             load  rd, sfldes    ; point to file descriptor
             call  save_text     ; save buffer text to file
             lbdf  sb_err        
-            
-;sb_lp:      ldn   rf            ; get length byte
-;            lbz   sb_dn         ; jump if done
-;
-;            push  rf            ; save buffer position
-;            lda   rf            ; get length byte
-;            plo   rc
-;            ldi   0             ; clear high byte of count
-;            phi   rc
-;            call  o_write       ; write the line
-;            pop   rf            ; recover buffer
-;            lbdf  sb_err        ; if we had a write error, exit
-            
-;            lda   rf            ; get length byte
-;            str   r2            ; and add to position
-;            glo   rf
-;            add
-;            plo   rf
-;            ghi   rf
-;            adci  0
-;            phi   rf
-;            lbr   sb_lp         ; loop back for next line
-
             
 sb_dn:      call  o_close       ; close the file
             
@@ -1046,6 +1023,7 @@ killquit:   call  getcurln      ; set r8 back to current line
             ;   r8 - new current line number
             ;-------------------------------------------------------                       
             proc  update_line
+            push  rf            ; save line pointer
             call  find_line     ; check current line
             call  insert_line   ; insert new text
             
@@ -1056,6 +1034,7 @@ killquit:   call  getcurln      ; set r8 back to current line
             dec   r8            ; move back to new line
             call  setcurln      ; save it for refresh
             clc                 ; clear DF to indicate line updated
+            pop   rf            ; restore line pointer
             return
             endp
 
