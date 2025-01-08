@@ -2421,8 +2421,13 @@ di_end:     call  get_cursor    ; restore cursor after questions
             ldn   rd            ; get first character
             lbz   di_none       ; if null, no input
             stc                 ; DF = 1, for input
-            lbr   di_exit       
-di_none:    clc                 ; DF = 0, for no input
+            lbr   di_exit
+                   
+di_none:    load  rf, e_state   ; restore status msg after no input
+            ldn   rf
+            ori   STATUS_BIT    ; set bit for status msg update
+            str   rf
+            clc                 ; DF = 0, for no input
 di_exit:    pop   rb            ; restore registers
             pop   rd
             return
