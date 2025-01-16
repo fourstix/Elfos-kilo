@@ -182,6 +182,7 @@ Repository Contents
   * kilo_line.asm - Assembly source file for line editing key handler routines.
   * kilo_move.asm - Assembly source file for cursor movement key handler routines.
   * kilo_input.asm - Assembly source file for input and confirmation functions.
+  * kilo_dbg.inc - Assembly source file for optionally included debug functions.
   * build.bat - Windows batch file to assemble and create the Elf/OS kilo editor.
   * clean.bat - Windows batch file to delete the executable and the associated build files.   
 * **/src/include/**  -- Include files for the graphics display programs and their libraries.  
