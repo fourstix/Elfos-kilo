@@ -1,5 +1,5 @@
 ; -------------------------------------------------------------------
-; Text movement key handlers for the kilo editor
+; Cursor movement key handlers for the kilo editor
 ; -------------------------------------------------------------------
 ; Copyright 2025 by Gaston Williams
 ; -------------------------------------------------------------------

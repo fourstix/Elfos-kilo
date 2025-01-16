@@ -1,5 +1,5 @@
 ; -------------------------------------------------------------------
-; Configuraiton functions for the kilo editor
+; Configuration functions for the kilo editor
 ; -------------------------------------------------------------------
 ; Copyright 2025 by Gaston Williams
 ; -------------------------------------------------------------------
