@@ -25,11 +25,10 @@ Elf/OS Kilo Key Commands
 <tr><td>Ctrl+H, Backspace</td><td>Move back and delete character</td></tr>
 <tr><td>Ctrl+I, Tab</td><td>Move forward to next tab stop</td></tr>
 <tr><td>Ctrl+], Shift+Tab</td><td>Move back to previous tab stop</td></tr>
-<tr><td>Ctrl+X</td><td>Quit, confirm if file changed</td></tr>
+<tr><td>Ctrl+X</td><td>Exit, confirm if file changed</td></tr>
 <tr><td rowspan="2">Ctrl+M, Enter</td><td>Insert Mode: insert new line or split at cursor</td></tr>
 <tr><td>Overwrite Mode: Move down to the next line.</td></tr>
-<tr><td>Ctrl+?, Ctrl-^</td><td rowspan="2">Show help information</td></tr>
-<tr><td>Ctrl+_ (See Note)</td>
+<tr><td>Ctrl+?, Ctrl-^ (See Note)</td><td>Show help information</td></tr>
 <tr><th>Keys</th><th>Function Set</th></tr>
 <tr><td>Ctrl+F</td><td>File Functions</td></tr>
 <tr><td>Ctrl+P</td><td>Page Functions</td></tr>
@@ -96,24 +95,24 @@ Elf/OS Kilo Modes
   * Enter splits a line at the cursor inside a line
   * Delete at the end of a line joins the current line with next line 
   * Backspace at the beginning of an empty line deletes the line
-  * Split (Ctrl-L,S) can also be used to insert lines or split a line
-  * Join (Ctrl-L,J) can also be used to join lines
+  * Line Split (Ctrl-L,S) will also insert lines or split a line
+  * Line Join (Ctrl-L,J) will join lines
    
 * **Overwrite Mode** 
   * Characters overwrite existing characters in the text
   * Tab moves the cursor to the next tab stop position
   * Enter moves down to the beginning of the next line
   * Delete and backspace do not delete empty lines automatically 
-  * Use Split (Ctrl-L,S) at the beginning or end of a line to insert an empty line
-  * Use Split (Ctrl-L,S) to explicitly split a line at the cursor inside a line
-  * Use Join (Ctrl-L,J) to explicitly join lines
-  * Use Cut (Ctrl-L,X) to delete a line (and copy into the clip board)
+  * Line Split (Ctrl-L,S) at the beginning or end of a line will insert an empty line
+  * Line Split (Ctrl-L,S) will split a line at the cursor inside a line
+  * Line Join (Ctrl-L,J) will join lines
+  * Line Delete (Ctrl-L,D) will delete a line
 
 Copy, Cut & Paste
 -----------------
-* Use Copy (Ctrl-L,C) to copy a line into the clip board 
-* Use Cut (Ctrl-L,X) to delete a line and copy into the clip board 
-* Use Paste (Ctrl-L,V) to paste a line from the clip board and insert above the current line
+* Line Copy (Ctrl-L,C) will copy a line into the clip board 
+* Line Cut (Ctrl-L,X) will delete a line and copy into the clip board 
+* Line Paste (Ctrl-L,V) will paste a line from the clip board and insert it above the current line
 
 Text Limits
 -----------
