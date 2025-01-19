@@ -3,13 +3,13 @@ A full screen editor for the Elf/OS written in 1802 Assembly language and based 
 
 Platform
 --------
-The Elf/OS kilo editor was written for an 1802 based Microcomputer running the Elf/OS operating system, such as the [Pico/Elf](http://www.elf-emulation.com/picoelf.html) by Mike Riley or the [1802-Mini](https://github.com/dmadole/1802-Mini) by David Madole or the [AVI Elf II](https://github.com/awasson/AVI-ELF-II) by Ed Keefe. A lot of information and software for the Pico/Elf, the 1802-Mini and the AVI Elf II can be found on the [Elf-Emulation](http://www.elf-emulation.com/) website and in the [COSMAC ELF Group](https://groups.io/g/cosmacelf) at groups.io.
+The Elf/OS kilo editor was written for an 1802 based Microcomputer running the [Elf/OS](https://github.com/rileym65/ElfosV5) operating system or the [Mini/DOS](https://github.com/dmadole/MiniDOS-kernel) operating system, such as the [Pico/Elf](http://www.elf-emulation.com/picoelf.html) by Mike Riley or the [1802-Mini](https://github.com/dmadole/1802-Mini) by David Madole or the [AVI Elf II](https://github.com/awasson/AVI-ELF-II) by Ed Keefe. A lot of information and software for the Pico/Elf, the 1802-Mini and the AVI Elf II can be found on the [Elf-Emulation](http://www.elf-emulation.com/) website and in the [COSMAC ELF Group](https://groups.io/g/cosmacelf) at groups.io.
 
 The Elf/OS kilo editor were assembled and linked with updated versions of the Asm-02 assembler and Link-02 linker by Mike Riley. The updated versions required to assemble and link this code are available at [fourstix/Asm-02](https://github.com/fourstix/Asm-02) and [fourstix/Link-02](https://github.com/fourstix/Link-02).
 
 
-Elf/OS Kilo Key Commands
-------------------------
+Kilo Key Commands
+-----------------
 <table>
 <tr><th>Keys</th><th>Command</th></tr>
 <tr><td>Ctrl+J, Left</td><td>Move cursor Left</td></tr>
@@ -39,8 +39,8 @@ Elf/OS Kilo Key Commands
 Note:  On some older terminals the Ctrl+_ key combination replaces the Ctrl+? combination key for help.  Some emulators may support one key combination, or the other, or both.
 
 
-Elf/OS File Functions
-----------------------
+Kilo File Functions
+--------------------
 <table>
 <tr><th rowspan="5">Ctrl-F</th><th>Keys</th><th>Function</th></tr>
 <tr><td>S</td><td>Save file</td></tr>
@@ -50,8 +50,8 @@ Elf/OS File Functions
 </table>
 
 
-Elf/OS Page Functions
-----------------------
+Kilo Page Functions
+-------------------
 <table>
 <tr><th rowspan="6">Ctrl-P</th><th>Keys</th><th>Function</th></tr>
 <tr><td>U</td><td>page Up to previous screen</td></tr>
@@ -61,8 +61,8 @@ Elf/OS Page Functions
 <tr><td>R</td><td>Refresh page on screen</td></tr>
 </table>
 
-Elf/OS Line Functions
-----------------------
+Kilo Line Functions
+-------------------
 <table>
 <tr><th rowspan="7">Ctrl-L</th><th>Keys</th><th>Function</th></tr>
 <tr><td>C</td><td>Copy line to clip board</td></tr>
@@ -73,21 +73,24 @@ Elf/OS Line Functions
 <tr><td>S</td><td>Split line at cursor</td></tr>
 </table>
 
-Elf/OS Cursor Functions
------------------------
+Kilo Cursor Functions
+---------------------
 <table>
 <tr><th rowspan="7">Ctrl-L</th><th>Keys</th><th>Function</th></tr>
 <tr><td>H</td><td>Move cursor to the beginning of line (Home)</td></tr>
 <tr><td>E</td><td>Move to End of line</td></tr>
-<tr><td>W</td><td>show Where cursor is located in file</td></tr>
-<tr><td>G</td><td>Go to line number</td></tr
+<tr><td>W</td><td>show Where cursor is located in file (See Note)</td></tr>
+<tr><td>G</td><td>Go to line number (See Note)</td></tr
 <tr><td>F</td><td>Find text</td></tr>
 <tr><td>I</td><td>Toggle insert/overwrite mode</td></tr>
 </table>
 
+Note: The line numbers are calculated based on 120 rows per buffer.  If a buffer
+has lines added or deleted, so that its number of rows is not 120, then calculated line number in following buffers will be off by the difference.
 
-Elf/OS Kilo Modes
------------------
+
+Kilo Text Modes
+---------------
 * **Insert Mode**
   * Characters are inserted into the text
   * Tab inserts spaces into the text
@@ -217,6 +220,9 @@ This code is based on a Elf/OS kernel written by Mike Riley and created with the
 
 Elf/OS 
 Copyright (c) 2004-2025 by Mike Riley
+
+Mini/DOS 
+Copyright (c) 2024-2025 by David Madole
 
 Kilo Editor 
 Copyright (c) 2016-2025 by Salvatore Sanfilippo
