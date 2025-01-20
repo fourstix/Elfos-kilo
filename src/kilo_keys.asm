@@ -369,7 +369,8 @@ c_error:    load  rf, msg_err     ; show error message before exit
               
 c_exit:     return
 c_rpt:        db 0                ; repeated character
-msg_err:      db '*** An Error Occurred ***',0            
+msg_err:      db '*** An Error Occurred ***',0
+              public msg_err
             endp               
 
             ; ******************************************************************
