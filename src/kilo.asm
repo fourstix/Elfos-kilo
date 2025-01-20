@@ -27,6 +27,8 @@
 #include include/kernel.inc
 #include include/kilo_def.inc
 
+            extrn   msg_err
+
             org     2000h
 start:      br      main
 
@@ -35,7 +37,7 @@ start:      br      main
 
 ever
 
-db    'Copyright 2024 by Gaston Williams',0
+db    'Copyright 2025 by Gaston Williams',0
 
 
 ; Main code starts here, check provided argument
@@ -75,8 +77,8 @@ k_exit:     call  end_kilo
         
             return                ; return to Elf/OS
 
-k_error:    call  o_inmsg         ; show file error message
-              db 'Error creating spill files!',10,13,0
+k_error:    load  rf, msg_err 
+            call  o_msg         ; show file error message
             lbr   k_exit          ; and end program
             
             ;------ define end of execution block

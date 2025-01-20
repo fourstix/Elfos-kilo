@@ -187,13 +187,20 @@ ld_exit:    pop   r7            ; restore registers
             ;   rb.0 - # lines to read (0 = read all lines)
             ; Uses:
             ;   ra - line count
+            ;   rb.1 - memory page
             ;   rc.0 - byte count
             ; Returns:
             ;   ra.0 = count of lines
             ;   DF = 1 - additional lines not loaded
             ;   DF = 0 - entire file loaded into buffer
+            ;   (ERROR_BIT in e_state set if an error occurs)
             ;-------------------------------------------------------                       
-            proc  load_text
+            proc  load_text        
+            load  ra, k_heap    ; check heap address
+            ldn   ra            ; get page for bottom of heap
+            smi   1             ; set memory limit to one page below
+            phi   rb            ; save page limit in rb.1
+            
             load  ra, 0         ; clear line counter
             
 loadlp:     push  rf            ; save text buffer address
@@ -220,6 +227,14 @@ loadnz:     ldi   13            ; write cr/lf to buffer
             adci   0
             phi   rf
             inc   ra            ; bump line count
+            
+            ; check to see if we reached memory limit after line
+            ghi   rf            ; check page for next line address
+            str   r2            ; save in M(X)
+            ghi   rb            ; get memory page limit 
+            sm                  ; current page - limit 
+            lbz  ldt_err        ; at the limit page, may not have enough memory
+            
             ; check for max line count for buffer
             ; Note: we could expand logic to use rb.1 for > 256 lines per buffer
             glo   rb            ; get line limit
@@ -253,6 +268,15 @@ loadeof:    clc                 ; clear DF flag (no more lines)
             clc                 ; clear DF flag after arithmetic
 loaddn:     ldi   0             ; write termination
             str   rf
+            return 
+                  
+ldt_err:    ldi   0             ; write termination (just in case)
+            str   rf
+            load  rf, e_state   ; get editor state byte
+            ldn   rf
+            ori   ERROR_BIT     ; set the error bit to exit with error message
+            str   rf            ; ave editor state
+            clc                 ; clear DF (no more loading after error)    
             return
             endp
             

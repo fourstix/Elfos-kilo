@@ -84,25 +84,20 @@
             ori   KBIO_BIT        ; set bit to buffer serial I/O
             str   rf              ; save updated byte
 
-            ;------ initialize screen window height and width
-bk_cont:    call  set_window_size
-
-            call  set_status_cmd  ; set the ANSI command for status location
-                                                                        
             ;------ Load file to edit
-            call  load_file       ; file text buffer
+bk_cont:    call  load_file       ; file text buffer
             lbnf  old_file        ; if file exists no new file message
-
-            load  rf, e_state     
-            ldn   rf              ; get editor state byte
-            ani   ERROR_BIT       ; check for spill error
-            lbnz  bk_err          ; exit with error message
                           
             ldn   rf              ; otherwise, set new file bit
             ori   NEWFILE_BIT     
             str   rf              ; save editor state in memory            
             
-old_file:   call  find_eob        ; get the number of lines into r8
+old_file:   load  rf, e_state     
+            ldn   rf              ; get editor state byte
+            ani   ERROR_BIT       ; check for spill error
+            lbnz  bk_err          ; exit with error message
+
+            call  find_eob        ; get the number of lines into r8
             call  set_num_lines   ; set the maximum line value in memory     
               
             ldi   0               ; set line counter to first line
@@ -111,6 +106,10 @@ old_file:   call  find_eob        ; get the number of lines into r8
             phi   rb              ; clear out line length and character position
             plo   rb
             phi   rc              ; set column offset to zero
+
+            ;------ initialize screen window height and width
+            call  set_window_size            
+            call  set_status_cmd  ; set the ANSI command for status location
 
             call  setcurln        ; set the current line in text buffer
             call  set_row_offset  ; set row offset for the top of screen
