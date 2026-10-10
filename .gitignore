@@ -1,4 +1,4 @@
-/src/kilo.elfos
+/kilo.elfos
 *.prg
 *.build
 *.lst
