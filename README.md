@@ -179,7 +179,6 @@ Repository Contents
   * kilo_cfg.asm - Assembly source file for configuration utility routines.
   * kilo_prmpt.asm - Assembly source file for prompt and functions and help information.
   * kilo_str.asm - Assembly source file for string and message functions.
-  * kilo_kbio.asm - Assembly source file for circular key buffer routines.
   * kilo_keys.asm - Assembly source file for main key handler and save routines.
   * kilo_text.asm - Assembly source file for text key handler routines.
   * kilo_edit.asm - Assembly source file for text editing key handler routines.

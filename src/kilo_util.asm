@@ -71,21 +71,8 @@
             ani   $fe             ; clear the echo bit
             phi   re              ; restore serial byte with echo off
 
-            ;----- set the key buffer I/O bit
-            ghi   re              ; re.1 = 0 means hardware uart
-            lbnz  bk_cont         ; don't buffer, bit-banged serial I/O
-            
-            load  rf, o_readkey+1 ; check kernel vector for readkey function
-            smi   $F8             ; $F800 and higher are BIOS ROM
-            lbnf  bk_cont         ; don't buffer, if vector has been redirected
-            
-            load  rf, e_state     ; otherwise, set bit in state byte
-            ldn   rf              ; get current state byte
-            ori   KBIO_BIT        ; set bit to buffer serial I/O
-            str   rf              ; save updated byte
-
             ;------ Load file to edit
-bk_cont:    call  load_file       ; file text buffer
+            call  load_file       ; file text buffer
             lbnf  old_file        ; if file exists no new file message
                           
             load  rf, e_state     ; otherwise, set new file bit
