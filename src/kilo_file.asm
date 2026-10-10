@@ -33,7 +33,7 @@
             extrn   k_dta
             extrn   readln
             extrn   readbyte
-            extrn   k_char
+            extrn   rd_buf
             extrn   sfldes
             extrn   s_dta
             extrn   rd_eol
@@ -144,7 +144,7 @@ feob_done:  dec   ra            ; move back to end of buffer byte
             call  o_open        ; attempt to open the file
             lbdf  ld_exit       ; exit immediately, if file does not exist
 
-            call  reset_eol     ; no line read from this file yet
+            call  reset_read    ; no line read from this file yet
             load  rf, textbuf   ; point to text buffer
             load  rd, fildes    ; point to file descriptor
             ldi   BUF_LINES     ; load up to default buffer size
@@ -374,18 +374,22 @@ readlneof:  ldi   1             ; signal eof
             endp
 
             ;-------------------------------------------------------
-            ; Name: reset_eol
+            ; Name: reset_read
             ;
-            ; Clear the end of line state, so the next line is read 
-            ; from the beginning of a newly opened file.
+            ; Empty the read buffer and clear the end of line state, 
+            ; so the next line is read from the beginning of a newly 
+            ; opened file.
             ;
             ; Parameters: (None)
             ; Uses:
             ;   rf - buffer pointer
             ; Returns: (None)
             ;-------------------------------------------------------
-            proc  reset_eol
+            proc  reset_read
             push  rf
+            load  rf, rd_buf    ; point to count of bytes left in buffer
+            ldi   0
+            str   rf
             load  rf, rd_eol    ; no line has ended yet
             ldi   0
             str   rf
@@ -396,38 +400,72 @@ readlneof:  ldi   1             ; signal eof
             ;-------------------------------------------------------
             ; Name: readbyte
             ;
-            ; Read a byte from a file into the character buffer
+            ; Read the next byte from a file.  Bytes are read from 
+            ; the file a block at a time into the read buffer, as 
+            ; a kernel call for every byte is slow.
             ;
             ; Parameters
-            ;   rf - pointer to text buffer
+            ;   rd - pointer to open file descriptor
             ; Uses:
-            ;   rc - byte count    
+            ;   re.0 - scratch register
             ; Returns:
+            ;   D - byte read
             ;   DF = 0, byte read 
             ;   DF = 1, end of file encountered
             ;-------------------------------------------------------
             proc  readbyte
             push  rf
             push  rc
-            load  rf, k_char
-            ldi   0
-            phi   rc
-            ldi   1
-            plo   rc
-            call  o_read
-            glo   rc
-            lbz   readbno
-            ldi   0
-readbcnt:   shr
-            load  rf, k_char
+            load  rf, rd_buf    ; point to count of bytes left in buffer
             ldn   rf
+            lbnz  readbget      ; get next byte if buffer not empty
+            
+            inc   rf            ; move past count and index to data
+            inc   rf
+            load  rc, RD_BUF_SIZE
+            call  o_read        ; read next block of file into buffer
+            lbdf  readbno       ; treat a read error as end of file
+            glo   rc            ; no bytes read at end of file
+            lbz   readbno
+            plo   re            ; keep a copy of byte count
+            load  rf, rd_buf    
+            glo   re            ; set count of bytes in buffer
+            str   rf
+            inc   rf
+            ldi   0             ; set index back to start of data
+            str   rf
+            dec   rf
+            glo   re            ; get count for next byte
+            
+readbget:   smi   1             ; one less byte left in buffer
+            str   rf
+            inc   rf            ; point to index of next byte
+            ldn   rf
+            plo   re            ; keep a copy of index
+            adi   1             ; move index to following byte
+            str   rf
+            inc   rf            ; point to data
+            glo   re            ; add index to data pointer
+            str   r2
+            glo   rf
+            add
+            plo   rf
+            ghi   rf
+            adci  0
+            phi   rf
+            ldn   rf            ; get byte from buffer
             plo   re
             pop   rc
             pop   rf
             glo   re
+            clc                 ; signal valid read
             return
-readbno:    ldi   1
-            lbr   readbcnt
+            
+readbno:    pop   rc
+            pop   rf
+            ldi   0
+            stc                 ; signal eof
+            return
             endp
             
             

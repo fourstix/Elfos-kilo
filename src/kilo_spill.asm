@@ -15,7 +15,6 @@
             extrn   k_dta
             extrn   readln
             extrn   readbyte
-            extrn   k_char
             extrn   sfldes
             extrn   s_dta
             
@@ -50,7 +49,7 @@
             call  o_open        ; attempt to open the file
             lbdf  lb_none       ; exit immediately, if file does not exist
                         
-            call  reset_eol     ; no line read from this file yet
+            call  reset_read    ; no line read from this file yet
 
             load  rf, textbuf   ; point to text buffer
             ldi   0             ; load entire buffer
