@@ -44,6 +44,7 @@
             ; Uses:
             ;   rf - buffer pointer
             ;   rd - integer value
+            ;   rc.0 - space left in buffer
             ;   r7 - pointer to integer byte in memory
             ; Returns:
             ;   DF = 1 if error, 0 if no error
@@ -51,50 +52,60 @@
             proc    set_window_size
             push    rf            ; save registers used
             push    rd
+            push    rc
             push    r7
             
             ;----- send ANSI commands to get size of screen window
             call    o_inmsg       ; set cursor to bottom right-most position
               db 27,'[999C',27,'[999B',0
+
+            load    rf, pos_buf   ; point to buffer for the response
+            ldi     POS_SIZE      ; limit response to size of buffer
+            plo     rc
             call    o_inmsg
               db 27,'[6n',0       ; query the cursor position
-            call    o_inmsg      ; send newline to get response
-              db 10,13,0
-            load    rf, pos_y     ; get y position first
-            call    o_readkey
+
+            ;----- The terminal sends its response all at once, so all
+            ;----- of it is read into the buffer before any of it is 
+            ;----- looked at, with as little as possible between reads.
+rd_pos:     call    o_readkey     ; get char in position string
+            str     rf            ; save in position buffer
+            inc     rf            ; move to next position
+            xri     'R'           ; check for end of string
+            lbz     rd_done       
+            dec     rc            ; count down space left in buffer
+            glo     rc
+            lbnz    rd_pos        ; keep going until end or buffer is full
+            lbr     bad_resp      ; if no end found, just return
+
+            ;----- response is <Esc>[y;xR
+rd_done:    load    rf, pos_buf   
+            lda     rf
             smi     27            ; check for escape
             lbnz    bad_resp      ; if bad response, just return          
-            call    o_readkey
+            lda     rf
             smi     '['           ; check for CSI marker
             lbnz    bad_resp      ; if bad response, just return
             
-rd_pos:     call    o_readkey     ; get char in position string
-            str     r2            ; save character in M(X)
-            ldi     'R'
-            sd                    ; check for end of string
-            lbz     rd_done       
-            
-            ldi     ';'           
-            sd                    ; check for xy separator
-            lbnz    put_char
-            
-            load    rf, pos_x     ; point to x value position
-            lbr     rd_pos        ; get next character 
-            
-put_char:   ldx                   ; get char from M(X)
-            str     rf            ; save in position buffer
-            inc     rf            ; move to next position
-            lbr     rd_pos
-
-rd_done:    load    r7, size_h    ; set memory byte pointer
-            load    rf, pos_y     ; convert y value string to byte
-            call    f_atoi
+            load    r7, size_h    ; set memory byte pointer
+            call    f_atoi        ; convert y value string to byte
             glo     rd            ; rd.0 contains integer value of y
             str     r7            ; save in memory
 
-            load    r7, size_w    ; set memory byte pointer
-            load    rf, pos_x     ; convert x value string to byte
-            call    f_atoi        
+            load    rf, pos_buf   ; look for xy separator after CSI marker
+            inc     rf
+            inc     rf
+fnd_sep:    lda     rf
+            plo     re            ; keep a copy of character
+            smi     ';'           ; check for xy separator
+            lbz     rd_x
+            glo     re
+            smi     'R'           ; check for end of string
+            lbnz    fnd_sep       
+            lbr     bad_resp      ; if no x value, just return
+
+rd_x:       load    r7, size_w    ; set memory byte pointer
+            call    f_atoi        ; convert x value string to byte
             glo     rd            ; rd.0 contains integer value of x
             str     r7            ; save in memory
             
@@ -103,12 +114,12 @@ rd_done:    load    r7, size_h    ; set memory byte pointer
             
 bad_resp:   stc                   ; Set DF = 1, for error
 sz_exit:    pop     r7            ; restore registers used
+            pop     rc
             pop     rd
             pop     rf
             return
 
-pos_y:    db 0,0,0,0              ; position string for y            
-pos_x:    db 0,0,0,0              ; position string for x
+pos_buf:  ds POS_SIZE             ; response to cursor position query
             endp
 
 
