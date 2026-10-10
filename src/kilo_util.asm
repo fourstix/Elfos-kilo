@@ -88,7 +88,8 @@
 bk_cont:    call  load_file       ; file text buffer
             lbnf  old_file        ; if file exists no new file message
                           
-            ldn   rf              ; otherwise, set new file bit
+            load  rf, e_state     ; otherwise, set new file bit
+            ldn   rf              ; get editor state byte
             ori   NEWFILE_BIT     
             str   rf              ; save editor state in memory            
             
