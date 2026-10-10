@@ -106,36 +106,44 @@ rd_next:    str     rf            ; save in position buffer
             xri     'R'           ; check for end of string
             lbnz    rd_pos        
 
-            ;----- response is <Esc>[y;xR
+            ;----- The response is <Esc>[y;xR, but on a bit-banged
+            ;----- console its first character can arrive before the 
+            ;----- read is waiting for it and be damaged.  So the 
+            ;----- values are found from the separator: y is the digits 
+            ;----- just before it, and x the digits just after it.
             load    rf, work_buf   
-            lda     rf
-            smi     27            ; check for escape
-            lbnz    bad_resp      ; if bad response, just return          
-            lda     rf
-            smi     '['           ; check for CSI marker
-            lbnz    bad_resp      ; if bad response, just return
-            
-            call    f_atoi        ; convert y value string to integer
-            glo     rd            ; rd.0 contains integer value of y
-            plo     rc            ; keep it until x value is known
-
-            load    rf, work_buf  ; look for xy separator after CSI marker
-            inc     rf
-            inc     rf
+            copy    rf, r7        ; r7 points to digits before separator
 fnd_sep:    lda     rf
             plo     re            ; keep a copy of character
             smi     ';'           ; check for xy separator
-            lbz     rd_x
+            lbz     rd_y
             glo     re
             smi     'R'           ; check for end of string
-            lbnz    fnd_sep       
-            lbr     bad_resp      ; if no x value, just return
+            lbz     bad_resp      ; if no separator, just return
+            glo     re
+            smi     '0'           ; check for a digit
+            lbnf    not_dig
+            smi     10
+            lbnf    fnd_sep       ; keep going through digits
+not_dig:    copy    rf, r7        ; digits begin after any other character
+            lbr     fnd_sep
 
-rd_x:       load    r7, size_w    ; set memory byte pointer
+rd_y:       copy    rf, r8        ; save pointer to x value string
+            copy    r7, rf        ; point to y value string
+            call    f_atoi        ; convert y value string to integer
+            lbdf    bad_resp      ; if no y value, just return
+            glo     rd            ; rd.0 contains integer value of y
+            lbz     bad_resp      
+            plo     rc            ; keep it until x value is known
+
+            copy    r8, rf        ; point to x value string
+            load    r7, size_w    ; set memory byte pointer
             call    f_atoi        ; convert x value string to integer
+            lbdf    bad_resp      ; if no x value, just return
             ghi     rd            ; check for a screen that is too wide
             lbnz    sz_wide       
             glo     rd            ; rd.0 contains integer value of x
+            lbz     bad_resp      
             smi     MAX_WIDTH+1   
             lbdf    sz_wide       ; if columns > maximum, use the maximum
             glo     rd            ; otherwise, use them
