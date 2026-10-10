@@ -38,7 +38,8 @@
             ; Name: set_window_size
             ;
             ; Get the screen size using the ANSI cursor commands, 
-            ; and set the pos_y and pos_x byte values.
+            ; and set the size_h and size_w byte values.  A screen 
+            ; wider than MAX_WIDTH is treated as MAX_WIDTH columns wide.
             ; 
             ; Parameters: (None)
             ; Uses:
@@ -105,9 +106,16 @@ fnd_sep:    lda     rf
             lbr     bad_resp      ; if no x value, just return
 
 rd_x:       load    r7, size_w    ; set memory byte pointer
-            call    f_atoi        ; convert x value string to byte
+            call    f_atoi        ; convert x value string to integer
+            ghi     rd            ; check for a screen that is too wide
+            lbnz    sz_wide       
             glo     rd            ; rd.0 contains integer value of x
-            str     r7            ; save in memory
+            smi     MAX_WIDTH+1   
+            lbdf    sz_wide       ; if columns > maximum, use the maximum
+            glo     rd            ; otherwise, use them
+            lbr     sz_width
+sz_wide:    ldi     MAX_WIDTH     
+sz_width:   str     r7            ; save in memory
             
             clc                   ; clear DF to indicate success 
             lbr     sz_exit       ; and exit
@@ -488,10 +496,13 @@ endp
 ;-------------------------------------------------------
 ; Name: status_msg
 ;
-; Buffer for editing the current status message
+; Buffer for editing the current status message.  It holds
+; one character for each screen column, up to MAX_WIDTH, 
+; plus the 5 byte ANSI reset sequence and null that ends 
+; the message.
 ;-------------------------------------------------------            
 proc  status_msg
-status_txt:   ds  128
+status_txt:   ds  MAX_WIDTH+5
 endp
 
 
