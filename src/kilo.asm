@@ -77,9 +77,12 @@ k_exit:     call  end_kilo
         
             return                ; return to Elf/OS
 
-k_error:    load  rf, msg_err 
-            call  o_msg         ; show file error message
-            lbr   k_exit          ; and end program
+k_error:    call  end_kilo        ; clean up before showing message
+            load  rf, msg_err 
+            call  o_msg           ; show file error message
+            call  o_inmsg
+              db 10,13,0
+            return                ; return to Elf/OS
             
             ;------ define end of execution block
             end     start

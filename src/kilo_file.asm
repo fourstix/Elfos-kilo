@@ -473,6 +473,7 @@ readbno:    ldi   1
 
 sf_cont:    call  reset_buf     ; reset to spill file zero
 sf_lp:      call  copy_buffer   ; copy spill file to saved file
+            lbdf  sf_err        ; don't report a failed save as saved
             call  next_buf      ; point to next spill file
             lbnf  sf_lp         ; keep going until out of spill files
             lbr   sf_done       ; close file after save
