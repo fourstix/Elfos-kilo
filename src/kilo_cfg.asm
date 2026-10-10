@@ -40,13 +40,28 @@
             ; Get the screen size using the ANSI cursor commands, 
             ; and set the size_h and size_w byte values.  A screen 
             ; wider than MAX_WIDTH is treated as MAX_WIDTH columns wide.
+            ;
+            ; The terminal sends its response all at once, and a call
+            ; to read each character takes longer than a character 
+            ; lasts at 57600 baud, so the hardware UART loses some of
+            ; them.  Most of that time is the call itself, so the read
+            ; routine is not called.  r6 holds the address to come back
+            ; to, a copy of it is put on the stack where the routine's 
+            ; return will take r6 from, and the routine is jumped to.  
+            ;
+            ; The copy has to be stacked the way the BIOS would have
+            ; stacked it for a call, low byte then high byte or high 
+            ; byte then low, so that is found out first, with one real 
+            ; call made while r6 holds $00FF.
             ; 
             ; Parameters: (None)
             ; Uses:
             ;   rf - buffer pointer
             ;   rd - integer value
-            ;   rc.0 - space left in buffer
+            ;   rc.0 - stacking order, then height of screen
+            ;   r8 - address to come back to, as it is to be stacked
             ;   r7 - pointer to integer byte in memory
+            ;   r6 - address to come back to
             ; Returns:
             ;   DF = 1 if error, 0 if no error
             ;-------------------------------------------------------
@@ -54,33 +69,45 @@
             push    rf            ; save registers used
             push    rd
             push    rc
+            push    r8
             push    r7
+            push    r6            ; save our own return address
             
             ;----- send ANSI commands to get size of screen window
             call    o_inmsg       ; set cursor to bottom right-most position
               db 27,'[999C',27,'[999B',0
 
-            load    rf, pos_buf   ; point to buffer for the response
-            ldi     POS_SIZE      ; limit response to size of buffer
-            plo     rc
+            ;----- find out which byte of r6 a call stacks last
+            load    r6, $00ff
+            call    sz_look       
+            plo     rc            ; $00 means low byte is stacked first
+
+            load    r6, rd_next   ; address to come back to after a read
+            copy    r6, r8        ; r8.0 is the byte to stack first
+            glo     rc
+            lbz     sz_query
+            ghi     r6            ; high byte first, so swap them
+            plo     r8
+            glo     r6
+            phi     r8
+
+sz_query:   load    rf, work_buf  ; point to buffer for the response
             call    o_inmsg
               db 27,'[6n',0       ; query the cursor position
 
-            ;----- The terminal sends its response all at once, so all
-            ;----- of it is read into the buffer before any of it is 
-            ;----- looked at, with as little as possible between reads.
-rd_pos:     call    o_readkey     ; get char in position string
-            str     rf            ; save in position buffer
+            ;----- read the response into the buffer, up to the final R
+rd_pos:     glo     r8            ; stack the address to come back to,
+            stxd                  ; as a call would have
+            ghi     r8
+            stxd
+            lbr     o_readkey     ; get char in position string
+rd_next:    str     rf            ; save in position buffer
             inc     rf            ; move to next position
             xri     'R'           ; check for end of string
-            lbz     rd_done       
-            dec     rc            ; count down space left in buffer
-            glo     rc
-            lbnz    rd_pos        ; keep going until end or buffer is full
-            lbr     bad_resp      ; if no end found, just return
+            lbnz    rd_pos        
 
             ;----- response is <Esc>[y;xR
-rd_done:    load    rf, pos_buf   
+            load    rf, work_buf   
             lda     rf
             smi     27            ; check for escape
             lbnz    bad_resp      ; if bad response, just return          
@@ -88,12 +115,11 @@ rd_done:    load    rf, pos_buf
             smi     '['           ; check for CSI marker
             lbnz    bad_resp      ; if bad response, just return
             
-            load    r7, size_h    ; set memory byte pointer
-            call    f_atoi        ; convert y value string to byte
+            call    f_atoi        ; convert y value string to integer
             glo     rd            ; rd.0 contains integer value of y
-            str     r7            ; save in memory
+            plo     rc            ; keep it until x value is known
 
-            load    rf, pos_buf   ; look for xy separator after CSI marker
+            load    rf, work_buf  ; look for xy separator after CSI marker
             inc     rf
             inc     rf
 fnd_sep:    lda     rf
@@ -116,18 +142,28 @@ rd_x:       load    r7, size_w    ; set memory byte pointer
             lbr     sz_width
 sz_wide:    ldi     MAX_WIDTH     
 sz_width:   str     r7            ; save in memory
+
+            load    r7, size_h    ; set memory byte pointer
+            glo     rc            ; get integer value of y
+            str     r7            ; save in memory
             
             clc                   ; clear DF to indicate success 
             lbr     sz_exit       ; and exit
             
 bad_resp:   stc                   ; Set DF = 1, for error
-sz_exit:    pop     r7            ; restore registers used
+sz_exit:    pop     r6            ; restore registers used
+            pop     r7
+            pop     r8
             pop     rc
             pop     rd
             pop     rf
             return
 
-pos_buf:  ds POS_SIZE             ; response to cursor position query
+            ;----- get the byte of r6 that the call to here stacked last
+sz_look:    copy    r2, rf        
+            inc     rf            ; point to top of stack
+            ldn     rf
+            return
             endp
 
 

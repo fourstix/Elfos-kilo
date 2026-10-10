@@ -53,7 +53,6 @@
 #define MAX_INTSTR  5
 #define MAX_TARGET 40
 #define SCREEN_TAB 16
-#define POS_SIZE   16
 
 ;-------------------------------------------------------------------------------
 ; Number Lines in single Buffer
