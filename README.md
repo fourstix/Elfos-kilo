@@ -188,6 +188,7 @@ Repository Contents
   * kilo_dbg.inc - Assembly source file for optionally included debug functions.
   * build.bat - Windows batch file to assemble and create the Elf/OS kilo editor.
   * clean.bat - Windows batch file to delete the executable and the associated build files.   
+* **Makefile** -- Builds the Elf/OS kilo editor as src/kilo.elfos on Linux and other systems with make. Set ASM and LINK if Asm/02 and Link/02 are not in /opt/elfc.
 * **/src/include/**  -- Include files for the graphics display programs and their libraries.  
   * kilo_def.inc - Definitions for Elf/OS kilo source files.
   * ops.inc - Opcode definitions for Asm/02.
