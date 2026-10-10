@@ -50,6 +50,8 @@
             call  o_open        ; attempt to open the file
             lbdf  lb_none       ; exit immediately, if file does not exist
                         
+            call  reset_eol     ; no line read from this file yet
+
             load  rf, textbuf   ; point to text buffer
             ldi   0             ; load entire buffer
             plo   rb            ; set limit to read all lines in buffer

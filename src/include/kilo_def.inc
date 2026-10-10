@@ -239,4 +239,5 @@
             extrn   save_text
             extrn   setup_spill
             extrn   teardown_spill
+            extrn   reset_eol
             
