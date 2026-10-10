@@ -212,6 +212,10 @@
             extrn   do_paste
             extrn   do_help
             extrn   do_reload  
+            extrn   do_file
+            extrn   do_page
+            extrn   do_line
+            extrn   do_cursor
 
 ;-------------------------------------------------------------------------------
 ; File routines used by kilo editor
