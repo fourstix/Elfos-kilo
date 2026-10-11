@@ -120,6 +120,7 @@
             extrn   scroll_left
             extrn   scroll_right
             extrn   refresh_screen
+            extrn   rf_top
             extrn   refresh_line
             extrn   set_row_offset
             extrn   get_row_offset
