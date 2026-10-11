@@ -1,0 +1,5 @@
+/kilo.elfos
+*.prg
+*.build
+*.lst
+*.lkb

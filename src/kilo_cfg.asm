@@ -38,77 +38,140 @@
             ; Name: set_window_size
             ;
             ; Get the screen size using the ANSI cursor commands, 
-            ; and set the pos_y and pos_x byte values.
+            ; and set the size_h and size_w byte values.  A screen 
+            ; wider than MAX_WIDTH is treated as MAX_WIDTH columns wide.
+            ;
+            ; The terminal sends its response all at once, and a call
+            ; to read each character takes longer than a character 
+            ; lasts at 57600 baud, so the hardware UART loses some of
+            ; them.  Most of that time is the call itself, so the read
+            ; routine is not called.  r6 holds the address to come back
+            ; to, a copy of it is put on the stack where the routine's 
+            ; return will take r6 from, and the routine is jumped to.  
+            ;
+            ; The copy has to be stacked the way the BIOS would have
+            ; stacked it for a call, low byte then high byte or high 
+            ; byte then low, so that is found out first, with one real 
+            ; call made while r6 holds $00FF.
             ; 
             ; Parameters: (None)
             ; Uses:
             ;   rf - buffer pointer
             ;   rd - integer value
+            ;   rc.0 - stacking order, then height of screen
+            ;   r8 - address to come back to, as it is to be stacked
             ;   r7 - pointer to integer byte in memory
+            ;   r6 - address to come back to
             ; Returns:
             ;   DF = 1 if error, 0 if no error
             ;-------------------------------------------------------
             proc    set_window_size
             push    rf            ; save registers used
             push    rd
+            push    rc
+            push    r8
             push    r7
+            push    r6            ; save our own return address
             
             ;----- send ANSI commands to get size of screen window
             call    o_inmsg       ; set cursor to bottom right-most position
               db 27,'[999C',27,'[999B',0
+
+            ;----- find out which byte of r6 a call stacks last
+            load    r6, $00ff
+            call    sz_look       
+            plo     rc            ; $00 means low byte is stacked first
+
+            load    r6, rd_next   ; address to come back to after a read
+            copy    r6, r8        ; r8.0 is the byte to stack first
+            glo     rc
+            lbz     sz_query
+            ghi     r6            ; high byte first, so swap them
+            plo     r8
+            glo     r6
+            phi     r8
+
+sz_query:   load    rf, work_buf  ; point to buffer for the response
             call    o_inmsg
               db 27,'[6n',0       ; query the cursor position
-            call    o_inmsg      ; send newline to get response
-              db 10,13,0
-            load    rf, pos_y     ; get y position first
-            call    o_readkey
-            smi     27            ; check for escape
-            lbnz    bad_resp      ; if bad response, just return          
-            call    o_readkey
-            smi     '['           ; check for CSI marker
-            lbnz    bad_resp      ; if bad response, just return
-            
-rd_pos:     call    o_readkey     ; get char in position string
-            str     r2            ; save character in M(X)
-            ldi     'R'
-            sd                    ; check for end of string
-            lbz     rd_done       
-            
-            ldi     ';'           
-            sd                    ; check for xy separator
-            lbnz    put_char
-            
-            load    rf, pos_x     ; point to x value position
-            lbr     rd_pos        ; get next character 
-            
-put_char:   ldx                   ; get char from M(X)
-            str     rf            ; save in position buffer
+
+            ;----- read the response into the buffer, up to the final R
+rd_pos:     glo     r8            ; stack the address to come back to,
+            stxd                  ; as a call would have
+            ghi     r8
+            stxd
+            lbr     o_readkey     ; get char in position string
+rd_next:    str     rf            ; save in position buffer
             inc     rf            ; move to next position
-            lbr     rd_pos
+            xri     'R'           ; check for end of string
+            lbnz    rd_pos        
 
-rd_done:    load    r7, size_h    ; set memory byte pointer
-            load    rf, pos_y     ; convert y value string to byte
-            call    f_atoi
+            ;----- The response is <Esc>[y;xR, but on a bit-banged
+            ;----- console its first character can arrive before the 
+            ;----- read is waiting for it and be damaged.  So the 
+            ;----- values are found from the separator: y is the digits 
+            ;----- just before it, and x the digits just after it.
+            load    rf, work_buf   
+            copy    rf, r7        ; r7 points to digits before separator
+fnd_sep:    lda     rf
+            plo     re            ; keep a copy of character
+            smi     ';'           ; check for xy separator
+            lbz     rd_y
+            glo     re
+            smi     'R'           ; check for end of string
+            lbz     bad_resp      ; if no separator, just return
+            glo     re
+            smi     '0'           ; check for a digit
+            lbnf    not_dig
+            smi     10
+            lbnf    fnd_sep       ; keep going through digits
+not_dig:    copy    rf, r7        ; digits begin after any other character
+            lbr     fnd_sep
+
+rd_y:       copy    rf, r8        ; save pointer to x value string
+            copy    r7, rf        ; point to y value string
+            call    f_atoi        ; convert y value string to integer
+            lbdf    bad_resp      ; if no y value, just return
             glo     rd            ; rd.0 contains integer value of y
-            str     r7            ; save in memory
+            lbz     bad_resp      
+            plo     rc            ; keep it until x value is known
 
+            copy    r8, rf        ; point to x value string
             load    r7, size_w    ; set memory byte pointer
-            load    rf, pos_x     ; convert x value string to byte
-            call    f_atoi        
+            call    f_atoi        ; convert x value string to integer
+            lbdf    bad_resp      ; if no x value, just return
+            ghi     rd            ; check for a screen that is too wide
+            lbnz    sz_wide       
             glo     rd            ; rd.0 contains integer value of x
+            lbz     bad_resp      
+            smi     MAX_WIDTH+1   
+            lbdf    sz_wide       ; if columns > maximum, use the maximum
+            glo     rd            ; otherwise, use them
+            lbr     sz_width
+sz_wide:    ldi     MAX_WIDTH     
+sz_width:   str     r7            ; save in memory
+
+            load    r7, size_h    ; set memory byte pointer
+            glo     rc            ; get integer value of y
             str     r7            ; save in memory
             
             clc                   ; clear DF to indicate success 
             lbr     sz_exit       ; and exit
             
 bad_resp:   stc                   ; Set DF = 1, for error
-sz_exit:    pop     r7            ; restore registers used
+sz_exit:    pop     r6            ; restore registers used
+            pop     r7
+            pop     r8
+            pop     rc
             pop     rd
             pop     rf
             return
 
-pos_y:    db 0,0,0,0              ; position string for y            
-pos_x:    db 0,0,0,0              ; position string for x
+            ;----- get the byte of r6 that the call to here stacked last
+sz_look:    copy    r2, rf        
+            inc     rf            ; point to top of stack
+            ldn     rf
+            return
             endp
 
 
@@ -477,10 +540,13 @@ endp
 ;-------------------------------------------------------
 ; Name: status_msg
 ;
-; Buffer for editing the current status message
+; Buffer for editing the current status message.  It holds
+; one character for each screen column, up to MAX_WIDTH, 
+; plus the 5 byte ANSI reset sequence and null that ends 
+; the message.
 ;-------------------------------------------------------            
 proc  status_msg
-status_txt:   ds  128
+status_txt:   ds  MAX_WIDTH+5
 endp
 
 

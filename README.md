@@ -85,8 +85,8 @@ Kilo Cursor Functions
 <tr><td>I</td><td>Toggle insert/overwrite mode</td></tr>
 </table>
 
-Note: The line numbers are calculated based on 120 rows per buffer.  If a buffer
-has lines added or deleted, so that its number of rows is not 120, then calculated line number in following buffers will be off by the difference.
+Note: The line numbers are calculated based on 96 rows per buffer.  If a buffer
+has lines added or deleted, so that its number of rows is not 96, then calculated line number in following buffers will be off by the difference.
 
 
 Kilo Text Modes
@@ -121,11 +121,13 @@ Text Limits
 -----------
 * Lines can have up to 124 characters per line
 * Tabs are defined as 4 character tab stops (1, 5, 9, etc.)
+* Tab characters in a file are replaced by spaces up to the next tab stop when the file is loaded
+* Other control characters in a file are removed when the file is loaded
   
 File Limits
 -----------
-* Buffers are used to edit files larger than 120 lines 
-* Each buffer has up to 120 lines
+* Buffers are used to edit files larger than 96 lines 
+* Each buffer has up to 96 lines
 * A file can have up to 255 buffers
 * Buffers are saved to temporary spill files, while the file is edited
 * Spill files are created automatically when a large file is loaded 
@@ -177,7 +179,6 @@ Repository Contents
   * kilo_cfg.asm - Assembly source file for configuration utility routines.
   * kilo_prmpt.asm - Assembly source file for prompt and functions and help information.
   * kilo_str.asm - Assembly source file for string and message functions.
-  * kilo_kbio.asm - Assembly source file for circular key buffer routines.
   * kilo_keys.asm - Assembly source file for main key handler and save routines.
   * kilo_text.asm - Assembly source file for text key handler routines.
   * kilo_edit.asm - Assembly source file for text editing key handler routines.
@@ -187,6 +188,7 @@ Repository Contents
   * kilo_dbg.inc - Assembly source file for optionally included debug functions.
   * build.bat - Windows batch file to assemble and create the Elf/OS kilo editor.
   * clean.bat - Windows batch file to delete the executable and the associated build files.   
+* **Makefile** -- Builds the Elf/OS kilo editor as kilo.elfos in the top folder on Linux and other systems with make. Set ASM and LINK if Asm/02 and Link/02 are not in /opt/elfc.
 * **/src/include/**  -- Include files for the graphics display programs and their libraries.  
   * kilo_def.inc - Definitions for Elf/OS kilo source files.
   * ops.inc - Opcode definitions for Asm/02.

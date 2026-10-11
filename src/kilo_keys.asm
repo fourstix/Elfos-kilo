@@ -41,7 +41,7 @@
             proc  do_kilo
       
             ; read characters until ctrl+q is typed  
-c_loop:     call  get_key         ; get a keyvalue             
+c_loop:     call  o_readkey       ; get a keyvalue             
             str   r2              ; save character at M(Xs)
 
             ; Check for printable or control char
@@ -114,10 +114,12 @@ c_rptd:     ldx                   ; get character and check for repeated arrows
             lbz   c_left          ; process Left Arrow key
             lbnz  c_unkn          ; Anything else is an unknown sequence
                 
-c_esc:      load  rf, c_rpt       ; clear repeated character
-            ldi   0               ; for control sequence
-            str   rf
-            call  get_key         ; get control sequence introducer character
+            ; The characters of an escape sequence arrive back to back, 
+            ; so each one is read straight from the kernel with only a  
+            ; compare between the reads.  A bit-banged serial line has 
+            ; nowhere to hold a character that arrives before the next
+            ; read is waiting for it.
+c_esc:      call  o_readkey       ; get control sequence introducer character
            
             str   r2              ; save character at M(X)  
             smi   '['             ; check for csi escape sequence
@@ -126,22 +128,28 @@ c_esc:      load  rf, c_rpt       ; clear repeated character
             ldx                   ; get character and check for VT-52 sequences
             lbr   sq_vt52 
         
-sq_csi:     call  get_key         ; get csi character
+sq_csi:     call  o_readkey       ; get csi character
             
 sq_vt52:    stxd                  ; save character on stack
             smi   'A'             ; check for 3 character sequence
             lbdf  sq_ok           ; A and above are 3 character sequences
 
-            call  get_key         ; get closing ~ for 4 char sequence
+            call  o_readkey       ; get closing ~ for 4 char sequence
             
             smi   '~'
             lbz   sq_ok           ; properly closed continue
 
+            load  rf, c_rpt       ; clear repeated character
+            ldi   0               ; for control sequence
+            str   rf
             irx                   ; pop char from stack into D
             ldx 
             lbr   c_unkn          ; print unknown escape seq message
         
-sq_ok:      irx                   ; get character from stack 
+sq_ok:      load  rf, c_rpt       ; clear repeated character
+            ldi   0               ; for control sequence
+            str   rf
+            irx                   ; get character from stack 
             ldx
             smi   49              ; check for <Esc>[1~ sequence
             lbz   c_home          ; process Home key
@@ -262,24 +270,10 @@ c_end:      call  do_end
             lbr   c_update
 
 c_pgup:     call  do_pgup
-
-            load  rf, e_state     ; check for key buffer
-            ldn   rf
-            ani   KBIO_BIT        ; zero all but kbio bit
-            lbz   cpup_nobuf      ; skip flush if no buffer in use
-            call  flush_keys      ; flush the key buffer            
-
-cpup_nobuf: lbr   c_update      
+            lbr   c_update      
 
 c_pgdn:     call  do_pgdn
-            
-            load  rf, e_state     ; check for key buffer
-            ldn   rf
-            ani   KBIO_BIT        ; zero all but kbio bit
-            lbz   cpdn_nobuf       ; skip flush if no buffer in use
-            call  flush_keys      ; flush the key buffer            
-            
-cpdn_nobuf: lbr   c_update
+            lbr   c_update
 
 c_unkn:     lbr   c_loop          ; continue processing                   
 
