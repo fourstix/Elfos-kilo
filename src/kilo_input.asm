@@ -48,7 +48,7 @@
             call  set_status
             call  prt_status      
                         
-            call  o_readkey      ; get a keyvalue response
+            call  get_key       ; get a keyvalue response
             
             stxd                ; save char on stack
             call  kilo_status   ; restore status message
@@ -65,17 +65,17 @@
             smi   27            ; check for escape character (ANSI sequence)
             lbnz  dc_no 
             
-            call  o_readkey      ; eat ansi sequences
+            call  get_key       ; eat ansi sequences
             
             smi   '['           ; check for csi escape sequence
             lbnz  dc_no         ; Anything but <Esc>[ is not ANSI, so done
                     
-            call  o_readkey      ; eat next character
+            call  get_key       ; eat next character
             
             smi   'A'           ; check for 3 character sequence (arrows)
             lbdf  dc_no         ; A and above are 3 character, so we are done
             
-            call  o_readkey      ; eat closing ~ for 4 char sequence (PgUp, PgDn, Home, End)
+            call  get_key       ; eat closing ~ for 4 char sequence (PgUp, PgDn, Home, End)
 
 dc_no:      clc                 ; DF = 0, means No response
             lbr   dc_exit
@@ -113,7 +113,7 @@ di_read:    copy  rb, rf        ; restore input prompt from copy
             call  set_input     ; show prompt with current input
             call  prt_status      
 
-            call  o_readkey      ; get a key value response
+            call  get_key       ; get a key value response
 
             str   r2            ; save at M(X) 
             smi   32            ; check for control character (below space)
@@ -135,13 +135,13 @@ di_read:    copy  rb, rf        ; restore input prompt from copy
 di_ctrl:    ldx                 ; get character
             smi   27            ; check for escape sequence
             lbnz  di_end        ; any other control char is fine
-            call  o_readkey      ; get next character in escape seqence
+            call  get_key       ; get next character in escape seqence
             smi   '['           ; check for ANSI csi sequence
             lbnz  di_end        ; anything else is two chracter escape
-            call  o_readkey      ; get next character of ANSI sequence
+            call  get_key       ; get next character of ANSI sequence
             smi   'A'           ; check for 3 character sequence
             lbdf  di_end        ; A and above are 3 character sequences
-            call  o_readkey      ; else, get closing ~ for 4 char sequence
+            call  get_key       ; else, get closing ~ for 4 char sequence
             
 di_end:     call  get_cursor    ; restore cursor after questions
             call  move_cursor   ; position cursor
@@ -243,7 +243,7 @@ sure_str:     db 'Are you sure (Y/N)?',0
             
             ldi   0               ; set up character count
             phi   rc
-            ldi   MAX_FNAME       ; up to 64 characters in filename and path
+            ldi   MAX_FNAME       ; up to 19 characters in filename
             plo   rc
             load  rf, dc_prmpt    ; set prompt to enter new file name
             load  rd, work_buf  ; point to working buffer for input            
@@ -278,7 +278,7 @@ dc_exit:    pop   r9
             pop   rd
             pop   rf
             return 
-dc_prmpt:     db 'New file name:',0
+dc_prmpt:     db 'Enter new file name: ',0
 dc_invalid:   db 'Invalid file name. File not saved.',0            
             endp 
 

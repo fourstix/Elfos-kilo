@@ -40,16 +40,11 @@
 #define DEF_COLS  80
 
 ;-------------------------------------------------------------------------------
-; Maximum Screen Width (the status message buffer holds this many columns)
-;-------------------------------------------------------------------------------
-#define MAX_WIDTH 132
-
-;-------------------------------------------------------------------------------
 ; Maximum Line Size and Column Position 
 ;-------------------------------------------------------------------------------
 #define MAX_LINE  124 
 #define MAX_COL   123 
-#define MAX_FNAME  64
+#define MAX_FNAME  19
 #define MAX_INTSTR  5
 #define MAX_TARGET 40
 #define SCREEN_TAB 16
@@ -58,11 +53,6 @@
 ; Number Lines in single Buffer
 ;-------------------------------------------------------------------------------
 #define BUF_LINES  96 
-
-;-------------------------------------------------------------------------------
-; Number of bytes read from a file at a time (255 maximum)
-;-------------------------------------------------------------------------------
-#define RD_BUF_SIZE  128
 
 
 ;-------------------------------------------------------------------------------
@@ -73,7 +63,7 @@
 ; Bit 5 - Mode bit, true = overwrite mode, false = insert mode
 ; Bit 4 - New File bit, true if file is new
 ; Bit 3 - Status bit, true if status message needs update
-; Bit 2 - (Not used)
+; Bit 2 - Buffered I/O bit - true if serial I/O can be buffered
 ; Bit 1 - Buffer Changed bit, true if buffer needs to be saved
 ; Bit 0 - Error bit, true indincates a program error occured
 ;-------------------------------------------------------------------------------
@@ -87,6 +77,8 @@
 #define NEWFILE_MASK  $EF
 #define STATUS_BIT    $08
 #define STATUS_MASK   $F7
+#define KBIO_BIT      $04
+#define KBIO_MASK     $FB
 #define BUFFER_CHG    $02
 #define BUFFER_MASK   $FD
 #define ERROR_BIT     $01
@@ -102,6 +94,11 @@
 ;---- Mask for clearing refresh and status bits at same time (screen updated)
 #define SCREEN_MASK   $B7
 
+
+;-------------------------------------------------------------------------------
+; Circular Key Buffer Size
+;-------------------------------------------------------------------------------
+#define KEY_BUF_SIZE   32
 
 ;-------------------------------------------------------------------------------
 ; Utility routines used by kilo editor
@@ -174,6 +171,10 @@
 ; Key handler routines used by kilo editor
 ;-------------------------------------------------------------------------------
             
+            extrn   get_key
+            extrn   flush_keys
+            extrn   keytail
+            extrn   keybuf
             extrn   do_kilo
             extrn   do_home
             extrn   do_mode
@@ -211,10 +212,6 @@
             extrn   do_paste
             extrn   do_help
             extrn   do_reload  
-            extrn   do_file
-            extrn   do_page
-            extrn   do_line
-            extrn   do_cursor
 
 ;-------------------------------------------------------------------------------
 ; File routines used by kilo editor
@@ -238,5 +235,4 @@
             extrn   save_text
             extrn   setup_spill
             extrn   teardown_spill
-            extrn   reset_read
             

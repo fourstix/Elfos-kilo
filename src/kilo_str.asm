@@ -424,16 +424,17 @@ ss_exit:    pop   r9          ; restore sratch registers
             ;   DF = 0, if not valid
             ;-------------------------------------------------------
             ; Note: Only the uppercase letters A-Z, lowercase 
-            ;   letters a-z, numbers 0-9, period, underscore, hyphen
-            ;   and forward slash are valid.
+            ;   letters a-z, numbers 0-9, period, underscore and
+            ;   forward slash are valid.
             ;-------------------------------------------------------
             proc  is_fnchar
             stxd                  ; save character on stack
-            smi   '-'             ; hyphen is first valid character
-            lbnf  cfn_bad         ; characters before hyphen are invalid
+            smi   '.'             ; period is first valid character
+            lbnf  cfn_bad         ; characters before period are invalid
+            lbz   cfn_ok          ; period is valid character
             
-            smi   13              ; next invalid character is the colon
-            lbnf  cfn_ok          ; hyphen, period, slash and 0 to 9 are valid
+            smi   12              ; next invalid character is the colon
+            lbnf  cfn_ok          ; forward slash and numbers 0 to 9 are valid
             lbz   cfn_bad         ; colon is invalid
             
             smi   7               ; next valid character is uppercase A

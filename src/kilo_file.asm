@@ -33,10 +33,9 @@
             extrn   k_dta
             extrn   readln
             extrn   readbyte
-            extrn   rd_buf
+            extrn   k_char
             extrn   sfldes
             extrn   s_dta
-            extrn   rd_eol
 
             
             ;-------------------------------------------------------
@@ -144,7 +143,6 @@ feob_done:  dec   ra            ; move back to end of buffer byte
             call  o_open        ; attempt to open the file
             lbdf  ld_exit       ; exit immediately, if file does not exist
 
-            call  reset_read    ; no line read from this file yet
             load  rf, textbuf   ; point to text buffer
             load  rd, fildes    ; point to file descriptor
             ldi   BUF_LINES     ; load up to default buffer size
@@ -208,11 +206,7 @@ ld_exit:    pop   r7            ; restore registers
 loadlp:     push  rf            ; save text buffer address
             inc   rf            ; point to position after length
             call  readln        ; read next line
-            lbnf  loadnz        ; jump if line was read
-            
-            glo   rc            ; at eof, see if bytes were read
-            lbz   loadeof       ; jump if not, otherwise text after 
-                                ; the last newline is the last line
+            lbdf  loadeof       ; jump if eof was found
 
 loadnz:     ldi   13            ; write cr/lf to buffer
             str   rf
@@ -253,6 +247,25 @@ loadnz:     ldi   13            ; write cr/lf to buffer
             
 loadeof:    clc                 ; clear DF flag (no more lines)
             pop   rf            ; recover buffer address
+            glo   rc            ; see if bytes were read
+            lbz   loaddn        ; jump if not
+
+            ldi   13            ; write cr/lf to buffer
+            str   rf
+            inc   rf
+            ldi   10
+            str   rf
+            inc   rc            ; add 2 characters
+            inc   rc
+            glo   rc            ; get count
+            str   r2
+            glo   rf
+            add
+            plo   rf
+            ghi   rf
+            adci  0
+            phi   rf
+            clc                 ; clear DF flag after arithmetic
 loaddn:     ldi   0             ; write termination
             str   rf
             return 
@@ -270,14 +283,10 @@ ldt_err:    ldi   0             ; write termination (just in case)
             ;-------------------------------------------------------
             ; Name: readln
             ;
-            ; Read a line from a file into the text buffer.  A line 
-            ; ends with a carriage return, a line feed, or both.
-            ; Tabs are expanded to spaces, and any other control
-            ; characters are skipped.
+            ; Read a line from a file into the text buffer
             ;
             ; Parameters
             ;   rf - pointer to text buffer
-            ;   rd - pointer to open file descriptor
             ; Uses:
             ;   rc - byte count    
             ; Returns:
@@ -292,81 +301,35 @@ readln1:    call  readbyte      ; read a byte
             lbdf  readlneof     ; jump on eof
 
             plo   re            ; keep a copy
-            smi   32            ; look for anything below a space
-            lbdf  readln3       ; process printable characters
+            smi   10            ; look for first newline character
+            lbz   readln2       ; go to possible blank line
+            smi   22            ; look for anything else below a space
+            lbnf  readln1       ; skip over any other control characters
+            lbr   readln3       ; otherwise, process printable characters
             
-            glo   re            ; recover control character
-            smi   10            ; look for line feed
-            lbz   readlnlf      
-            smi   3             ; look for carriage return
-            lbz   readlncr      
-            glo   re
-            smi   9             ; look for tab
-            lbnz  readln1       ; skip over any other control characters 
-            
-            ldi   1             ; flag tab in rc.1, until next tab stop
-            phi   rc
-            ldi   ' '           ; a tab becomes spaces in the text buffer
-            plo   re
-            lbr   readln3
+readln2:    call  readbyte      ; read a byte
+            lbdf  readlneof     ; jump on eof
 
-            ; a line feed after the carriage return that ended the  
-            ; previous line belongs to that line, any other ends this one
-readlnlf:   push  rf            ; save text buffer pointer
-            load  rf, rd_eol    ; get the end of line state
-            ldn   rf
-            lbz   readlnend     ; zero means no line feed is expected
-            ldi   0             ; otherwise clear state and skip it
-            str   rf
-            pop   rf
-            lbr   readln1
-            
-            ; a carriage return ends the line, unless it follows 
-            ; a long line that was split 
-readlncr:   push  rf            ; save text buffer pointer
-            load  rf, rd_eol    ; get the end of line state
-            ldn   rf
-            plo   re            ; keep a copy of state
-            ldi   1             ; a line feed may come next
-            str   rf
-            glo   re
-            smi   2             ; state of 2 means line was split
-            lbnz  readlnend     ; if not, carriage return ends this line
-            pop   rf
-            lbr   readln1       ; otherwise it ended the line before 
-
-readln3:    glo   rc            ; text clears the end of line state
-            lbnz  readlnput     ; which only needs to be done once
-            push  rf
-            load  rf, rd_eol
-            ldi   0
-            str   rf
-            pop   rf
-
-readlnput:  glo   re            ; recover byte
+            plo   re            ; keep a copy
+            smi   10            ; look for second newline character
+            lbz   readln4       ; exit on blank line
+            smi   22            ; look for anything else below a space
+            lbnf  readln2       ; skip over any other control characters
+                            
+readln3:    glo   re            ; recover byte
             str   rf            ; store into buffer
             inc   rf            ; point to next position
             inc   rc            ; increment character count
             glo   rc            ; check for text longer than max line size
             smi   MAX_LINE      ; read up to MAX_LINE characters
-            lbz   readlnsplt    ; split line once it is full
+            lbz   readln4       ; split long text into individual lines
             
-            ghi   rc            ; check for tab being expanded
-            lbz   readln1       ; if not, keep going until line is full
-            glo   rc            ; tab stops are every 4 characters
-            ani   3
-            lbnz  readlnput     ; put spaces until next tab stop
-            phi   rc            ; then clear tab flag 
-            lbr   readln1       ; and keep going
-            
-readlnsplt: push  rf            ; split long text into individual lines
-            load  rf, rd_eol
-            ldi   2             ; newline may come next, if line was full
-            str   rf
-
-readlnend:  pop   rf            ; recover text buffer pointer            
+            call  readbyte      ; read next byte
+            lbdf  readlneof     ; jump if end of file
+            plo   re            ; keep a copy of read byte
+            smi   32            ; make sure it is positive
+            lbdf  readln3       ; loop back on valid characters
 readln4:    ldi   0             ; signal valid read
-            phi   rc            ; make sure tab flag is clear
 readlncnt:  shr                 ; shift into DF
             return              ; and return to caller
 readlneof:  ldi   1             ; signal eof
@@ -374,98 +337,40 @@ readlneof:  ldi   1             ; signal eof
             endp
 
             ;-------------------------------------------------------
-            ; Name: reset_read
-            ;
-            ; Empty the read buffer and clear the end of line state, 
-            ; so the next line is read from the beginning of a newly 
-            ; opened file.
-            ;
-            ; Parameters: (None)
-            ; Uses:
-            ;   rf - buffer pointer
-            ; Returns: (None)
-            ;-------------------------------------------------------
-            proc  reset_read
-            push  rf
-            load  rf, rd_buf    ; point to count of bytes left in buffer
-            ldi   0
-            str   rf
-            load  rf, rd_eol    ; no line has ended yet
-            ldi   0
-            str   rf
-            pop   rf
-            return
-            endp
-
-            ;-------------------------------------------------------
             ; Name: readbyte
             ;
-            ; Read the next byte from a file.  Bytes are read from 
-            ; the file a block at a time into the read buffer, as 
-            ; a kernel call for every byte is slow.
+            ; Read a byte from a file into the character buffer
             ;
             ; Parameters
-            ;   rd - pointer to open file descriptor
+            ;   rf - pointer to text buffer
             ; Uses:
-            ;   re.0 - scratch register
+            ;   rc - byte count    
             ; Returns:
-            ;   D - byte read
             ;   DF = 0, byte read 
             ;   DF = 1, end of file encountered
             ;-------------------------------------------------------
             proc  readbyte
             push  rf
             push  rc
-            load  rf, rd_buf    ; point to count of bytes left in buffer
-            ldn   rf
-            lbnz  readbget      ; get next byte if buffer not empty
-            
-            inc   rf            ; move past count and index to data
-            inc   rf
-            load  rc, RD_BUF_SIZE
-            call  o_read        ; read next block of file into buffer
-            lbdf  readbno       ; treat a read error as end of file
-            glo   rc            ; no bytes read at end of file
+            load  rf, k_char
+            ldi   0
+            phi   rc
+            ldi   1
+            plo   rc
+            call  o_read
+            glo   rc
             lbz   readbno
-            plo   re            ; keep a copy of byte count
-            load  rf, rd_buf    
-            glo   re            ; set count of bytes in buffer
-            str   rf
-            inc   rf
-            ldi   0             ; set index back to start of data
-            str   rf
-            dec   rf
-            glo   re            ; get count for next byte
-            
-readbget:   smi   1             ; one less byte left in buffer
-            str   rf
-            inc   rf            ; point to index of next byte
+            ldi   0
+readbcnt:   shr
+            load  rf, k_char
             ldn   rf
-            plo   re            ; keep a copy of index
-            adi   1             ; move index to following byte
-            str   rf
-            inc   rf            ; point to data
-            glo   re            ; add index to data pointer
-            str   r2
-            glo   rf
-            add
-            plo   rf
-            ghi   rf
-            adci  0
-            phi   rf
-            ldn   rf            ; get byte from buffer
             plo   re
             pop   rc
             pop   rf
             glo   re
-            clc                 ; signal valid read
             return
-            
-readbno:    pop   rc
-            pop   rf
-            ldi   0
-            stc                 ; signal eof
-            return
+readbno:    ldi   1
+            lbr   readbcnt
             endp
             
             
@@ -511,7 +416,6 @@ readbno:    pop   rc
 
 sf_cont:    call  reset_buf     ; reset to spill file zero
 sf_lp:      call  copy_buffer   ; copy spill file to saved file
-            lbdf  sf_err        ; don't report a failed save as saved
             call  next_buf      ; point to next spill file
             lbnf  sf_lp         ; keep going until out of spill files
             lbr   sf_done       ; close file after save

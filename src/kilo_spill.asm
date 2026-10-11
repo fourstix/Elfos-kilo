@@ -15,6 +15,7 @@
             extrn   k_dta
             extrn   readln
             extrn   readbyte
+            extrn   k_char
             extrn   sfldes
             extrn   s_dta
             
@@ -49,8 +50,6 @@
             call  o_open        ; attempt to open the file
             lbdf  lb_none       ; exit immediately, if file does not exist
                         
-            call  reset_read    ; no line read from this file yet
-
             load  rf, textbuf   ; point to text buffer
             ldi   0             ; load entire buffer
             plo   rb            ; set limit to read all lines in buffer
@@ -225,8 +224,7 @@ cb_lp:      load  rc, 255       ; want to read 255 bytes
             lbnf  cb_lp         ; loop back if no errors
          
 
-cb_err:     load  rd, sfldes    ; point back to spill file
-            call  o_close       ; attempt to close open file
+cb_err:     call  o_close       ; attempt to close open file
             stc                 ; set DF=1 for error
             lbr   cb_exit       ; exit with error
             
