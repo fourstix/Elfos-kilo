@@ -27,6 +27,9 @@
 #include include/kernel.inc
 #include include/kilo_def.inc
 
+            extrn   row_offset
+            extrn   col_offset
+
 
 ; *******************************************************************
 ; ***         Main Key Handler for Kilo Editor                    ***
@@ -41,7 +44,36 @@
             proc  do_kilo
       
             ; read characters until ctrl+q is typed  
-c_loop:     call  o_readkey       ; get a keyvalue             
+c_loop:     load  rf, c_col       ; save where the cursor is in the text
+            glo   rb              ; before the key, so a change to the 
+            str   rf              ; line is redrawn from where it begins
+            inc   rf
+            glo   r8
+            str   rf
+            inc   rf
+            ldi   0               ; no change made to the line by this key yet
+            str   rf
+            inc   rf
+            str   rf              ; and no lines added or removed
+            inc   rf
+
+            ;----- save what decides how much of the screen a refresh needs
+            load  rd, row_offset  ; row offset
+            lda   rd
+            str   rf
+            inc   rf
+            ldn   rd
+            str   rf
+            inc   rf
+            load  rd, col_offset  ; column offset
+            ldn   rd
+            str   rf
+            inc   rf
+            call  get_cursor      ; cursor row
+            ghi   r7
+            str   rf
+            
+            call  o_readkey       ; get a keyvalue             
             str   r2              ; save character at M(Xs)
 
             ; Check for printable or control char
@@ -81,6 +113,9 @@ c_prt:      ldx                   ; get printable character at M(X)
             call  put_line_buffer ; put new line in line buffer
             ldi   0               ; move to beginning column
             plo   rb
+            load  rf, c_col       ; a new line is redrawn from the beginning
+            ldi   0
+            str   rf
             
 cprt_mode:  pop   r9              ; restore r9 with character to type
             load  rf, e_state     ; get editor state byte  
@@ -233,7 +268,7 @@ c_tab:      call  do_tab
             lbr   c_line
             
 c_enter:    call  do_enter
-            lbr   c_update
+            lbr   c_lines
 
 c_file:     call  do_file         ; prompt and do file functions
             lbdf  c_quit          ; DF=1 means quit program
@@ -245,7 +280,7 @@ c_page:     call  do_page         ; prompt and do page functions
             
 c_linef:    call  do_line
             lbdf  c_loop          ; show message until key pressed
-            lbr   c_update        ; update screen after line function
+            lbr   c_lines         ; update screen after line function
 
 c_cursor:   call  do_cursor
             lbdf  c_loop          ; show message until key pressed
@@ -263,7 +298,7 @@ c_mode:     call  do_mode          ; toggle the editor mode
             lbr   c_loop
  
 c_del:      call  do_del
-            lbdf  c_update        ; if we deleted a line then update display
+            lbdf  c_lines         ; if we deleted a line then update display
             lbr   c_line          ; otherwise just update line
              
 c_end:      call  do_end
@@ -318,27 +353,85 @@ c_update:   load  rf, e_state     ; get state byte
             ani   REFRESH_BIT     ; check for refresh
             lbz   c_move          ; if no refrsh, just move cursor                        
 
-            call  refresh_screen  ; refresh screen
+            ;----- A key that adds or removes a line changes nothing above
+            ;----- the cursor, so only the rows from the cursor's row down
+            ;----- are refreshed, from where it was or where it is now,  
+            ;----- whichever is higher.  If the screen has scrolled, all  
+            ;----- of it is refreshed.
+            load  rf, c_col       ; point to lines changed flag
+            inc   rf
+            inc   rf
+            inc   rf
+            lda   rf
+            lbz   c_all           ; refresh all for any other key
 
+            load  rd, row_offset  ; check row offset is as it was
+            lda   rd
+            str   r2
+            lda   rf
+            xor
+            lbnz  c_all
+            ldn   rd
+            str   r2
+            lda   rf
+            xor
+            lbnz  c_all
+            load  rd, col_offset  ; check column offset is as it was
+            ldn   rd
+            str   r2
+            lda   rf
+            xor
+            lbnz  c_all
+            
+            call  get_cursor      ; get cursor row
+            ghi   r7
+            str   r2
+            ldn   rf              ; get cursor row before key
+            sm                    ; subtract row now from row before
+            lbnf  c_above         ; if it was higher before, begin there
+            ghi   r7              ; otherwise begin at row now
+            lbr   c_top
+c_above:    ldn   rf
+c_top:      plo   re
+            load  rd, rf_top      ; set first row to refresh
+            glo   re
+            str   rd
+
+c_all:      call  refresh_screen  ; refresh screen
+
+            ;----- the screen is drawn from the text buffer, so a change
+            ;----- this key made to the line has to be drawn again 
+            load  rf, c_col       ; point to line changed flag
+            inc   rf
+            inc   rf
+            ldn   rf
+            lbz   c_clear         ; if key did not change line, nothing to do
+            ldi   0               ; redraw from beginning of line
+            plo   rd
+            ldi   1               ; erase to the end of the line
+            phi   rd
+            call  refresh_line    
+            
+c_clear:
             ;----- clear refresh bit
             load  rf, e_state     ; get state byte
             ldn   rf              
             ani   REFRESH_MASK    ; clear the refresh bit
             str   rf              ; update state byte            
 
-c_move:     call  o_inmsg
-              db 27,'[?25l',0     ; hide cursor
-            call  o_inmsg         ; reset cursor for move
-              db 27,'[H',0
-
+c_move:     
 #ifdef KILO_DEBUG                  
+            call  o_inmsg
+              db 27,'[?25l',0     ; hide cursor
             call  prt_status_dbg  ; always update debug status line              
 #else    
-            load  rf, e_state     ; check refresh bit
+            load  rf, e_state     ; check status bit
             ldn   rf
             ani   STATUS_BIT      ; zero out all other bits, but status
-            lbz   c_rdy           ; if no status update, ready to process character
+            lbz   c_rdy           ; if no status update, just move the cursor
             
+            call  o_inmsg
+              db 27,'[?25l',0     ; hide cursor
             call  kilo_status     ; update the status message
             call  prt_status      ; update the status line
 
@@ -346,7 +439,6 @@ c_move:     call  o_inmsg
             ldn   rf
             ani   STATUS_MASK     ; clear bit
             str   rf              ; save updated editor state byte
-c_rdy:                         
 #endif
 
             call  get_cursor
@@ -355,7 +447,67 @@ c_rdy:
               db 27,'[?25h',0     ; show cursor        
             lbr   c_loop
 
-c_line:     call  refresh_line    ; update line on screen
+            ;----- the cursor was not hidden, so there is no need to show it
+c_rdy:      call  get_cursor
+            call  move_cursor     ; move to new position
+            lbr   c_loop
+
+            ;----- flag lines as added or removed by this key
+c_lines:    load  rf, c_col       
+            inc   rf
+            inc   rf
+            inc   rf
+            ldi   1               
+            str   rf
+            lbr   c_update
+
+            ;----- A key that changes the line leaves everything before
+            ;----- the change as it was on the screen, so the line is 
+            ;----- redrawn from the column before the key or the column 
+            ;----- after it, whichever is further left.  The end of the 
+            ;----- line is only erased if the cursor did not move right,
+            ;----- as only then can the line be shorter than it was.
+c_line:     load  rf, c_col       ; point to line before the key
+            inc   rf
+            glo   r8              ; check against current line
+            str   r2
+            ldn   rf
+            xor
+            lbnz  cl_all          ; redraw all of a different line
+            
+            dec   rf              ; point to column before the key
+            ldn   rf
+            str   r2
+            glo   rb              ; get column after the key
+            sm                    ; subtract column before from column after
+            lbnf  cl_here         ; moved left, redraw from new column
+            lbz   cl_here         ; did not move, redraw from this column
+            
+            ldn   rf              ; moved right, redraw from old column
+            plo   rd
+            ldi   0               ; nothing to erase
+            phi   rd
+            lbr   cl_draw
+
+cl_all:     load  rf, c_col       ; a different line may mean one was removed
+            inc   rf
+            inc   rf
+            inc   rf
+            ldi   1               ; flag lines as added or removed
+            str   rf
+            ldi   0               ; redraw from beginning of line
+            lbr   cl_erase
+cl_here:    glo   rb              ; redraw from current column
+cl_erase:   plo   rd
+            ldi   1               ; erase to the end of the line
+            phi   rd
+            
+cl_draw:    call  refresh_line    ; update line on screen
+            load  rf, c_col       ; flag line as changed by this key
+            inc   rf
+            inc   rf
+            ldi   1
+            str   rf
             lbr   c_update
 
 c_error:    load  rf, msg_err     ; show error message before exit
@@ -363,6 +515,13 @@ c_error:    load  rf, msg_err     ; show error message before exit
               
 c_exit:     return
 c_rpt:        db 0                ; repeated character
+c_col:        db 0                ; character position before key
+              db 0                ; current line before key (low byte)
+              db 0                ; non-zero if key changed the line
+              db 0                ; non-zero if key added or removed lines
+              dw 0                ; row offset before key
+              db 0                ; column offset before key
+              db 0                ; cursor row before key
 msg_err:      db '*** An Error Occurred ***',0
               public msg_err
             endp               

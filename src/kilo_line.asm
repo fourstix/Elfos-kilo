@@ -286,13 +286,19 @@ no_rtscrl:  call  set_cursor      ; update cursor position
             ; Name: refresh_line
             ;
             ; Send the ANSI sequences and text to refresh a line 
-            ; on the screen.
+            ; on the screen, from a character position to the end
+            ; of the line.  The text is written over what is on the  
+            ; screen and anything left after it is erased, as erasing
+            ; the line first makes it flicker.
             ; 
             ; Parameters: 
             ;   r7 - cursor position
+            ;   rd.0 - first character position to refresh
+            ;   rd.1 - zero if there is nothing to erase after text
             ; Uses:
             ;   rf - buffer pointer 
             ;   rc.1 - column offset
+            ;   r9.0 - columns left on the row
             ;   r7 - cursor position
             ; Returns: (None)
             ;-------------------------------------------------------            
@@ -303,43 +309,89 @@ no_rtscrl:  call  set_cursor      ; update cursor position
             lda   rf              ; get dirty flag
             lbz   rl_done         ; if no changes, exit 
             
+            push  rd              ; save registers used
+            push  r9
+            push  r7              ; save cursor position  
+
             call  get_col_offset  ; get column offset in rc.1
-            ghi   rc              ; get character offset
-            str   r2              ; save in rf
+            ghi   rc              
+            str   r2              ; save in M(X)
+            glo   rd              ; get first position to refresh
+            sm                    ; subtract offset to get screen column
+            lbdf  rl_start        ; continue if position is on screen
+            ghi   rc              ; otherwise begin with first on-screen
+            plo   rd              ; character at left-most column
+            ldi   0
+rl_start:   adi   1               ; cursor values begin at 1, not 0
+            plo   r7              ; set cursor to first column to refresh
+            
+            str   r2              ; save column in M(X)
+            load  r9, size_w      ; get window width
+            ldn   r9
+            sm                    ; subtract column from width
+            adi   1               ; to get columns left on the row
+            plo   r9
+                        
+            glo   rd              ; get first position to refresh
+            str   r2              ; save in M(X)
             glo   rf
-            add                   ; add offset to rf
+            add                   ; add position to rf
             plo   rf              ; update low byte
             ghi   rf              ; update high byte
             adci  0               ; with carry flag 
-            phi   rf              ; rf now points to first on-screen character
-            
-            push  r7              ; save cursor position  
-            
-            ldi   0               ; clear out char counter
-            plo   r7              ; set cursor position to beginning of line                          
+            phi   rf              ; rf now points to first character to refresh
 
+            ;----- The text in the line buffer ends with a carriage 
+            ;----- return and line feed, which are not written.  Only 
+            ;----- hide the cursor to write more than one character.
+            ldn   rf              ; check for end of line
+            smi   ' '
+            lbnf  rl_one          
+            inc   rf
+            ldn   rf              ; check for end of line after first character
+            dec   rf
+            smi   ' '
+            lbnf  rl_one
+            
+            ldi   1               ; flag cursor as hidden in rd.0
+            plo   rd
             call  o_inmsg
               db 27,'[?25l',0     ; hide cursor        
+            lbr   rl_move
+            
+rl_one:     ldi   0               ; flag cursor as not hidden
+            plo   rd
 
-            call  move_cursor     ; position cursor
+rl_move:    call  move_cursor     ; position cursor at first column to refresh
 
-            call  o_inmsg
-              db 27,'[2K',0       ; erase line
-
-            call  move_cursor     ; position cursor to beginning of line
-
-rl_next:    lda   rf              ; get character from buffer
-            lbz   rl_eol          ; null marks the end of line
+rl_next:    glo   r9              ; check for the right edge of the screen
+            lbz   rl_shown        ; nothing to erase if row has been filled
+            lda   rf              ; get character from buffer
+            plo   re              ; keep a copy of character
+            smi   ' '             ; anything below a space is the end of line
+            lbnf  rl_eol          
+            glo   re
             call  o_type          ; print character to screen          
+            glo   r9              ; count down columns left
+            smi   1
+            plo   r9
             lbr   rl_next
 
-rl_eol:     pop   r7              ; restore cursor position
+rl_eol:     ghi   rd              ; check for anything to erase
+            lbz   rl_shown
+            call  o_inmsg
+              db 27,'[K',0        ; erase from cursor to end of line
+
+rl_shown:   pop   r7              ; restore cursor position
+            glo   rd              ; check if cursor was hidden
+            lbz   rl_exit         ; if not, caller moves cursor
             call  move_cursor     ; position cursor 
-              
             call  o_inmsg
               db 27,'[?25h',0     ; show cursor        
 
-rl_done:    pop   rf              ; restore register
+rl_exit:    pop   r9              ; restore registers
+            pop   rd
+rl_done:    pop   rf              
             return 
             endp  
 
