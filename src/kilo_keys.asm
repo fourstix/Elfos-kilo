@@ -1,9 +1,9 @@
 ; -------------------------------------------------------------------
-; A simple full screen editor based on the Kilo editor, 
-; a small text editor in less than 1K lines of code 
-; written by Salvatore Sanfilippo aka antirez 
+; A simple full screen editor based on the Kilo editor,
+; a small text editor in less than 1K lines of code
+; written by Salvatore Sanfilippo aka antirez
 ; available at https://github.com/antirez/kilo
-; and described step-by-step at the website 
+; and described step-by-step at the website
 ; https://viewsourcecode.org/snaptoken/kilo/index.html
 ; -------------------------------------------------------------------
 ; Also based on the Elf/OS edit program written by Michael H Riley
@@ -29,23 +29,24 @@
 
             extrn   row_offset
             extrn   col_offset
+            extrn   rf_top
 
 
 ; *******************************************************************
 ; ***         Main Key Handler for Kilo Editor                    ***
 ; *******************************************************************
-                  
+
             ;-------------------------------------------------------
             ; Name: do_kilo
             ;
-            ; Read a key and dispatch it to the appropriate 
+            ; Read a key and dispatch it to the appropriate
             ; key handler until Ctrl+Q is pressed.
-            ;-------------------------------------------------------       
+            ;-------------------------------------------------------
             proc  do_kilo
-      
-            ; read characters until ctrl+q is typed  
+
+            ; read characters until ctrl+q is typed
 c_loop:     load  rf, c_col       ; save where the cursor is in the text
-            glo   rb              ; before the key, so a change to the 
+            glo   rb              ; before the key, so a change to the
             str   rf              ; line is redrawn from where it begins
             inc   rf
             glo   r8
@@ -72,13 +73,13 @@ c_loop:     load  rf, c_col       ; save where the cursor is in the text
             call  get_cursor      ; cursor row
             ghi   r7
             str   rf
-            
-            call  o_readkey       ; get a keyvalue             
+
+            call  o_readkey       ; get a keyvalue
             str   r2              ; save character at M(Xs)
 
             ; Check for printable or control char
             ; values (0-31 or 127) control
-        
+
 chk_c:      ldi   27              ; check for escape char immediately
             sd                    ; if c = <esc>
             lbz   c_esc           ; process escape sequence
@@ -89,18 +90,18 @@ chk_c:      ldi   27              ; check for escape char immediately
             lbz   c_ctrl          ; 127 is a control char
 
             load  rf, c_rpt       ; get repeated character
-            ldn   rf          
-            sm                    ; check for match with repeat 
+            ldn   rf
+            sm                    ; check for match with repeat
             lbz   c_rptd          ; if match, repeated char
             ldi   0               ; otherwise clear repeated char
-            str   rf            
-                        
+            str   rf
+
 c_prt:      ldx                   ; get printable character at M(X)
             plo   r9
-            
+
             push  rf              ; save rf
             push  r9              ; save r9 with character to type
-            
+
             call  get_num_lines   ; set r9 to maximum line value
 
             sub16 r9, r8          ; is the current line in r8 at maximum?
@@ -108,7 +109,7 @@ c_prt:      ldx                   ; get printable character at M(X)
             lbnz  cprt_mode       ; if r9 is not zero, continue on
             glo   r9
             lbnz  cprt_mode       ; if zero, current line is at maximum
-            
+
             call  do_insline      ; insert a new line before typing
             call  put_line_buffer ; put new line in line buffer
             ldi   0               ; move to beginning column
@@ -116,61 +117,61 @@ c_prt:      ldx                   ; get printable character at M(X)
             load  rf, c_col       ; a new line is redrawn from the beginning
             ldi   0
             str   rf
-            
+
 cprt_mode:  pop   r9              ; restore r9 with character to type
-            load  rf, e_state     ; get editor state byte  
+            load  rf, e_state     ; get editor state byte
             ldn   rf
             ani   ERROR_BIT       ; check for error
-            lbnz   c_error        ; if error, exit with message    
-            
+            lbnz   c_error        ; if error, exit with message
+
             ldn   rf              ; get editor state byte again
             ani   MODE_BIT        ; toggle input mode bit
             lbz   cprt_ins        ; default is insert mode
-             
-cprt_ovr:   call  do_typeover     ; overwrite printable character            
-            lbr   cprt_done       
-            
+
+cprt_ovr:   call  do_typeover     ; overwrite printable character
+            lbr   cprt_done
+
 cprt_ins:   glo   rb              ; get current line position
             smi   MAX_COL         ; check if at maximum
-            lbdf  cprt_ovr        ; if at maximum, type over 
-            call  do_typein       ; insert printable character            
+            lbdf  cprt_ovr        ; if at maximum, type over
+            call  do_typein       ; insert printable character
 cprt_done:  pop   rf              ; restore buffer register when done
             lbr   c_line          ; update line
 
 c_rptd:     ldx                   ; get character and check for repeated arrows
             smi   'A'             ; check for ^[AAAA repeated sequence
             lbnf  c_unkn          ; anything below 'A' is unknown
-            lbz   c_up            ; process Up Arrow key            
+            lbz   c_up            ; process Up Arrow key
             smi   1               ; check for ^[BBBB
             lbz   c_dwn           ; process Down Arrow key
             smi   1               ; check for ^[CCCC
-            lbz   c_rght          ; process Right Arrow key  
+            lbz   c_rght          ; process Right Arrow key
             smi   1               ; check for ^[DDDD
             lbz   c_left          ; process Left Arrow key
             lbnz  c_unkn          ; Anything else is an unknown sequence
-                
-            ; The characters of an escape sequence arrive back to back, 
-            ; so each one is read straight from the kernel with only a  
-            ; compare between the reads.  A bit-banged serial line has 
+
+            ; The characters of an escape sequence arrive back to back,
+            ; so each one is read straight from the kernel with only a
+            ; compare between the reads.  A bit-banged serial line has
             ; nowhere to hold a character that arrives before the next
             ; read is waiting for it.
 c_esc:      call  o_readkey       ; get control sequence introducer character
-           
-            str   r2              ; save character at M(X)  
+
+            str   r2              ; save character at M(X)
             smi   '['             ; check for csi escape sequence
             lbz   sq_csi          ; <Esc>[ is a valid ANSI sequence
 
             ldx                   ; get character and check for VT-52 sequences
-            lbr   sq_vt52 
-        
+            lbr   sq_vt52
+
 sq_csi:     call  o_readkey       ; get csi character
-            
+
 sq_vt52:    stxd                  ; save character on stack
             smi   'A'             ; check for 3 character sequence
             lbdf  sq_ok           ; A and above are 3 character sequences
 
             call  o_readkey       ; get closing ~ for 4 char sequence
-            
+
             smi   '~'
             lbz   sq_ok           ; properly closed continue
 
@@ -178,13 +179,13 @@ sq_vt52:    stxd                  ; save character on stack
             ldi   0               ; for control sequence
             str   rf
             irx                   ; pop char from stack into D
-            ldx 
+            ldx
             lbr   c_unkn          ; print unknown escape seq message
-        
+
 sq_ok:      load  rf, c_rpt       ; clear repeated character
             ldi   0               ; for control sequence
             str   rf
-            irx                   ; get character from stack 
+            irx                   ; get character from stack
             ldx
             smi   49              ; check for <Esc>[1~ sequence
             lbz   c_home          ; process Home key
@@ -204,13 +205,13 @@ sq_ok:      load  rf, c_rpt       ; clear repeated character
             smi   1               ; check for <Esc>[B
             lbz   c_dwn           ; process Down Arrow key
             smi   1               ; check for <Esc>[C
-            lbz   c_rght          ; process Right Arrow key  
+            lbz   c_rght          ; process Right Arrow key
             smi   1               ; check for <Esc>[D
             lbz   c_left          ; process Left Arrow key
             smi   22              ; check for <Esc>[Z
-            lbz   c_bktab         ; process Shift-Tab 
+            lbz   c_bktab         ; process Shift-Tab
             lbr   c_unkn          ; Anything else is unknown
-                
+
 c_ctrl:     load  rf, c_rpt       ; clear repeated character
             ldi   0               ; for control sequence
             str    rf
@@ -221,7 +222,7 @@ c_ctrl:     load  rf, c_rpt       ; clear repeated character
             smi   1               ; check for Ctrl-C (Cursor Functions)
             lbz   c_cursor
             smi   1               ; check for Ctrl-D (Delete)
-            lbz   c_del  
+            lbz   c_del
             smi   2               ; check for Ctrl-F (File Functions)
             lbnf  c_unkn          ; Ctrl-E not used
             lbz   c_file
@@ -248,25 +249,25 @@ c_ctrl:     load  rf, c_rpt       ; clear repeated character
             lbz   c_up
             smi   3               ; check for Ctrl-X (Exit)
             lbnf  c_unkn          ; Ctrl-V,W not used
-            lbz   c_quit        
+            lbz   c_quit
             smi   5               ; check for Ctrl-] (Back Tab)
             lbnf  c_unkn          ; Ctrl-Y,Z,[,\ not used (Ctrl-[ is escape)
             lbz   c_bktab
             smi   2               ; check for Ctrl-? (Ctrl-/)
-            lbnf  c_help          ; Ctrl-^ is also Help 
-            lbz   c_help          ; check for Ctrl-? 
-            smi   96              ; check for DEL (Delete)            
+            lbnf  c_help          ; Ctrl-^ is also Help
+            lbz   c_help          ; check for Ctrl-?
+            smi   96              ; check for DEL (Delete)
             lbz   c_del
 
-            lbr   c_loop          ; ignore any unknown chracters  
+            lbr   c_loop          ; ignore any unknown chracters
 
             ;----- Control key actions
 c_bs:       call  do_backspace
             lbr   c_line
-            
+
 c_tab:      call  do_tab
             lbr   c_line
-            
+
 c_enter:    call  do_enter
             lbr   c_lines
 
@@ -274,10 +275,10 @@ c_file:     call  do_file         ; prompt and do file functions
             lbdf  c_quit          ; DF=1 means quit program
             lbr   c_loop          ; show message until key pressed
 
-c_page:     call  do_page         ; prompt and do page functions 
+c_page:     call  do_page         ; prompt and do page functions
             lbdf  c_move          ; if nothing was done, update the prompt
             lbr   c_update        ; update screen after page function
-            
+
 c_linef:    call  do_line
             lbdf  c_loop          ; show message until key pressed
             lbr   c_lines         ; update screen after line function
@@ -287,7 +288,7 @@ c_cursor:   call  do_cursor
             lbr   c_update        ; update screen after page function
 
 c_quit:     call  do_quit         ; check dirty flag and prompt before quitting
-            lbdf  c_loop          ; DF = 1, means don't quit 
+            lbdf  c_loop          ; DF = 1, means don't quit
             lbr   c_exit
 
             ;----- 4 character CSI escape sequences
@@ -296,33 +297,33 @@ c_home:     call  do_home
 
 c_mode:     call  do_mode          ; toggle the editor mode
             lbr   c_loop
- 
+
 c_del:      call  do_del
             lbdf  c_lines         ; if we deleted a line then update display
             lbr   c_line          ; otherwise just update line
-             
+
 c_end:      call  do_end
             lbr   c_update
 
 c_pgup:     call  do_pgup
-            lbr   c_update      
+            lbr   c_update
 
 c_pgdn:     call  do_pgdn
             lbr   c_update
 
-c_unkn:     lbr   c_loop          ; continue processing                   
+c_unkn:     lbr   c_loop          ; continue processing
 
 c_help:     call  do_help         ; show help information
             lbr   c_update        ; refresh screen after help text
-            
+
 ;-----  3 character csi escape sequences
 c_up:       call  do_up
             load  rf, c_rpt       ; set repeated character
             ldi   'A'             ; for up arrow ^[AAAA
             str    rf
             lbr   c_update
-            
-c_dwn:      call  do_down  
+
+c_dwn:      call  do_down
             load  rf, c_rpt       ; set repeated character
             ldi   'B'             ; for down arrow ^[BBBB
             str    rf
@@ -345,18 +346,18 @@ c_bktab:    call  do_bktab
 
             ;---- check refresh flag and update screen or move cursor
 c_update:   load  rf, e_state     ; get state byte
-            ldn   rf               
+            ldn   rf
             ani   ERROR_BIT       ; check for error
-            lbnz   c_error        ; if error, show message and exit       
+            lbnz   c_error        ; if error, show message and exit
 
             ldn   rf              ; get state byte again
             ani   REFRESH_BIT     ; check for refresh
-            lbz   c_move          ; if no refrsh, just move cursor                        
+            lbz   c_move          ; if no refrsh, just move cursor
 
             ;----- A key that adds or removes a line changes nothing above
             ;----- the cursor, so only the rows from the cursor's row down
-            ;----- are refreshed, from where it was or where it is now,  
-            ;----- whichever is higher.  If the screen has scrolled, all  
+            ;----- are refreshed, from where it was or where it is now,
+            ;----- whichever is higher.  If the screen has scrolled, all
             ;----- of it is refreshed.
             load  rf, c_col       ; point to lines changed flag
             inc   rf
@@ -382,7 +383,7 @@ c_update:   load  rf, e_state     ; get state byte
             lda   rf
             xor
             lbnz  c_all
-            
+
             call  get_cursor      ; get cursor row
             ghi   r7
             str   r2
@@ -400,7 +401,7 @@ c_top:      plo   re
 c_all:      call  refresh_screen  ; refresh screen
 
             ;----- the screen is drawn from the text buffer, so a change
-            ;----- this key made to the line has to be drawn again 
+            ;----- this key made to the line has to be drawn again
             load  rf, c_col       ; point to line changed flag
             inc   rf
             inc   rf
@@ -410,26 +411,26 @@ c_all:      call  refresh_screen  ; refresh screen
             plo   rd
             ldi   1               ; erase to the end of the line
             phi   rd
-            call  refresh_line    
-            
+            call  refresh_line
+
 c_clear:
             ;----- clear refresh bit
             load  rf, e_state     ; get state byte
-            ldn   rf              
+            ldn   rf
             ani   REFRESH_MASK    ; clear the refresh bit
-            str   rf              ; update state byte            
+            str   rf              ; update state byte
 
-c_move:     
-#ifdef KILO_DEBUG                  
+c_move:
+#ifdef KILO_DEBUG
             call  o_inmsg
               db 27,'[?25l',0     ; hide cursor
-            call  prt_status_dbg  ; always update debug status line              
-#else    
+            call  prt_status_dbg  ; always update debug status line
+#else
             load  rf, e_state     ; check status bit
             ldn   rf
             ani   STATUS_BIT      ; zero out all other bits, but status
             lbz   c_rdy           ; if no status update, just move the cursor
-            
+
             call  o_inmsg
               db 27,'[?25l',0     ; hide cursor
             call  kilo_status     ; update the status message
@@ -444,7 +445,7 @@ c_move:
             call  get_cursor
             call  move_cursor     ; move to new position
             call  o_inmsg
-              db 27,'[?25h',0     ; show cursor        
+              db 27,'[?25h',0     ; show cursor
             lbr   c_loop
 
             ;----- the cursor was not hidden, so there is no need to show it
@@ -453,18 +454,18 @@ c_rdy:      call  get_cursor
             lbr   c_loop
 
             ;----- flag lines as added or removed by this key
-c_lines:    load  rf, c_col       
+c_lines:    load  rf, c_col
             inc   rf
             inc   rf
             inc   rf
-            ldi   1               
+            ldi   1
             str   rf
             lbr   c_update
 
             ;----- A key that changes the line leaves everything before
-            ;----- the change as it was on the screen, so the line is 
-            ;----- redrawn from the column before the key or the column 
-            ;----- after it, whichever is further left.  The end of the 
+            ;----- the change as it was on the screen, so the line is
+            ;----- redrawn from the column before the key or the column
+            ;----- after it, whichever is further left.  The end of the
             ;----- line is only erased if the cursor did not move right,
             ;----- as only then can the line be shorter than it was.
 c_line:     load  rf, c_col       ; point to line before the key
@@ -474,7 +475,7 @@ c_line:     load  rf, c_col       ; point to line before the key
             ldn   rf
             xor
             lbnz  cl_all          ; redraw all of a different line
-            
+
             dec   rf              ; point to column before the key
             ldn   rf
             str   r2
@@ -482,7 +483,7 @@ c_line:     load  rf, c_col       ; point to line before the key
             sm                    ; subtract column before from column after
             lbnf  cl_here         ; moved left, redraw from new column
             lbz   cl_here         ; did not move, redraw from this column
-            
+
             ldn   rf              ; moved right, redraw from old column
             plo   rd
             ldi   0               ; nothing to erase
@@ -501,7 +502,7 @@ cl_here:    glo   rb              ; redraw from current column
 cl_erase:   plo   rd
             ldi   1               ; erase to the end of the line
             phi   rd
-            
+
 cl_draw:    call  refresh_line    ; update line on screen
             load  rf, c_col       ; flag line as changed by this key
             inc   rf
@@ -512,7 +513,7 @@ cl_draw:    call  refresh_line    ; update line on screen
 
 c_error:    load  rf, msg_err     ; show error message before exit
             call  do_confirm      ; wait until key pressed and exit
-              
+
 c_exit:     return
 c_rpt:        db 0                ; repeated character
 c_col:        db 0                ; character position before key
@@ -524,25 +525,25 @@ c_col:        db 0                ; character position before key
               db 0                ; cursor row before key
 msg_err:      db '*** An Error Occurred ***',0
               public msg_err
-            endp               
+            endp
 
             ; ******************************************************************
             ; ***              Save function for Kilo Editor                 ***
             ; ******************************************************************
 
-            
+
             ;-------------------------------------------------------
             ; Name: do_save
             ;
             ; Save a file to the disk, if the file has changed.
-            ; 
+            ;
             ; Parameters: (None)
             ; Uses:
             ;   rf - buffer pointer
             ; Returns:
             ;   DF = 0, success (File saved or no changes to save)
             ;   DF = 1, an error occurred when saving the file
-            ;-------------------------------------------------------                                                
+            ;-------------------------------------------------------
             proc  do_save
             push  rf              ; save register
 
@@ -557,20 +558,20 @@ msg_err:      db '*** An Error Occurred ***',0
 
 ds_rdy:     load  rf, saving_msg  ; show initial message
             call  set_status      ; show message set previously
-            call  prt_status      
-                        
-            load  rf, e_state     ; get editor state byte  
+            call  prt_status
+
+            load  rf, e_state     ; get editor state byte
             ldn   rf
             ani   DIRTY_BIT       ; check the dirty bit
             lbz   ds_none         ; no changes to save
-            
+
             call  save_file       ; save file to disk
             lbdf  ds_error        ; DF = 1, means an error occurred
-            load  rf, saved_msg   ; show file was saved 
+            load  rf, saved_msg   ; show file was saved
             ldi   0               ; save DF result on stack
-            stxd    
+            stxd
             lbr   ds_show
-            
+
 ds_error:   load  rf, saved_err   ; show an error message
             ldi   1               ; save DF result on stack
             stxd
@@ -579,26 +580,25 @@ ds_error:   load  rf, saved_err   ; show an error message
 ds_none:    load  rf, clean_msg   ; set the status for unchanged file
             ldi   0
             stxd                  ; save DF result on stack
-            
+
 ds_show:    call  set_status      ; show message set previously
-            call  prt_status      
+            call  prt_status
             call  get_cursor      ; restore cursor after message
-            call  move_cursor     ; position cursor 
-            
+            call  move_cursor     ; position cursor
+
             load  rf, e_state     ; set status bit
             ldn   rf
             ori   STATUS_BIT      ; set bit to reset status msg after file msg
             str   rf
 
             irx                   ; get DF value from stack
-            ldx 
-            shr                   ; Set DF 
-            
-            pop   rf              ; restore register 
+            ldx
+            shr                   ; Set DF
+
+            pop   rf              ; restore register
             return
 clean_msg:    db 'No file changes to save.',0
 saved_msg:    db '* File Saved. *',0
 saved_err:    db '* ERROR Saving File. *',0
 saving_msg:   db 'Saving...',0
             endp
-                        

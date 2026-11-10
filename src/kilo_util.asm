@@ -1,9 +1,9 @@
 ; -------------------------------------------------------------------
-; Utility fucntions for a simple full screen editor based on the Kilo 
-; editor, a small text editor in less than 1K lines of C code 
-; written by Salvatore Sanfilippo aka antirez 
+; Utility fucntions for a simple full screen editor based on the Kilo
+; editor, a small text editor in less than 1K lines of C code
+; written by Salvatore Sanfilippo aka antirez
 ; available at https://github.com/antirez/kilo
-; and described step-by-step at the website 
+; and described step-by-step at the website
 ; https://viewsourcecode.org/snaptoken/kilo/index.html
 ; -------------------------------------------------------------------
 ; Also based on the Elf/OS edit program written by Michael H Riley
@@ -26,25 +26,26 @@
 #include include/bios.inc
 #include include/kernel.inc
 #include include/kilo_def.inc
-            
+
             extrn   size_h
             extrn   size_w
             extrn   num_lines
             extrn   row_offset
             extrn   col_offset
+            extrn   rf_top
 
 ;-------------------------------------------------------------------------------
-;                      General Register Usage                     
-;  r7 - Cursor position                                      
-;  r8 - Current line                                         
+;                      General Register Usage
+;  r7 - Cursor position
+;  r8 - Current line
 ;  r9 - cursor limits, window size, line counter
 ;  ra - Text buffer pointer
-;  rb.1 - line size                                  
-;  rb.0 - char position in line 
-;  rc.0 - counter, dimension value (for count)                                           
+;  rb.1 - line size
+;  rb.0 - char position in line
+;  rc.0 - counter, dimension value (for count)
 ;  rc.1 - column offset
 ;  rd - Destination pointer, parameter register
-;  rf - General buffer pointer                               
+;  rf - General buffer pointer
 ;-------------------------------------------------------------------------------
 
 
@@ -53,19 +54,19 @@
           ;
           ; Initialize the screen and setup the application.
           ;
-          ; Parameters: (None) 
+          ; Parameters: (None)
           ; Uses:
           ;   rf - buffer pointer
           ;   re.1 - Elf/OS serial byte
           ;   fname - should be set by caller
-          ; Returns: 
+          ; Returns:
           ;   re.1 - serial echo bit off
           ;   r8 - current line number
-          ;   r7 - cursor set to home position 
+          ;   r7 - cursor set to home position
           ;-------------------------------------------------------
 
             proc  begin_kilo
-                 
+
             ;------ Enable raw mode
             ghi   re              ; get Elf/OS serial byte
             ani   $fe             ; clear the echo bit
@@ -74,20 +75,20 @@
             ;------ Load file to edit
             call  load_file       ; file text buffer
             lbnf  old_file        ; if file exists no new file message
-                          
+
             load  rf, e_state     ; otherwise, set new file bit
             ldn   rf              ; get editor state byte
-            ori   NEWFILE_BIT     
-            str   rf              ; save editor state in memory            
-            
-old_file:   load  rf, e_state     
+            ori   NEWFILE_BIT
+            str   rf              ; save editor state in memory
+
+old_file:   load  rf, e_state
             ldn   rf              ; get editor state byte
             ani   ERROR_BIT       ; check for spill error
             lbnz  bk_err          ; exit with error message
 
             call  find_eob        ; get the number of lines into r8
-            call  set_num_lines   ; set the maximum line value in memory     
-              
+            call  set_num_lines   ; set the maximum line value in memory
+
             ldi   0               ; set line counter to first line
             phi   r8
             plo   r8
@@ -96,40 +97,40 @@ old_file:   load  rf, e_state
             phi   rc              ; set column offset to zero
 
             ;------ initialize screen window height and width
-            call  set_window_size            
+            call  set_window_size
             call  set_status_cmd  ; set the ANSI command for status location
 
             call  setcurln        ; set the current line in text buffer
             call  set_row_offset  ; set row offset for the top of screen
             call  put_line_buffer
             call  set_col_offset  ; set column offset in memory
-            
+
             ;------ Set up default status msg
-            call  kilo_status     ; set up initial sttus message 
+            call  kilo_status     ; set up initial sttus message
 
             call  clear_screen    ; clear the screen
             call  refresh_screen  ; print buffer to screen
 
             call  o_inmsg
-            db 27,'[?25l',0       ; hide cursor        
+            db 27,'[?25l',0       ; hide cursor
 
-#ifdef KILO_DEBUG                  
-            call  prt_status_dbg  ; always show debug status line              
-#else                         
+#ifdef KILO_DEBUG
+            call  prt_status_dbg  ; always show debug status line
+#else
             call  prt_status      ; print status line
-#endif          
+#endif
 
             call  home_cursor     ; set cursor position in memory
-              
+
             call  o_inmsg
               db 27,'[H',0        ; home cursor on screen
             call  o_inmsg
-              db 27,'[?25h',0     ; show cursor        
-              
-            clc                   ; return without error              
+              db 27,'[?25h',0     ; show cursor
+
+            clc                   ; return without error
             return
-            
-bk_err:     stc                   ; return with error 
+
+bk_err:     stc                   ; return with error
             return
             endp
 
@@ -138,27 +139,27 @@ bk_err:     stc                   ; return with error
             ;-------------------------------------------------------
             ; Name: end_kilo
             ;
-            ; Set the serial echo bit on to disable the raw mode, 
+            ; Set the serial echo bit on to disable the raw mode,
             ; and clear the screen before exiting the application.
-            ;            
+            ;
             ; Parameters: (None)
             ; Uses:
             ;   re.1 - Elf/OS serial byte
-            ; Returns: 
+            ; Returns:
             ;   re.1 - serial echo bit on
             ;-------------------------------------------------------
-            proc  end_kilo 
+            proc  end_kilo
             load  rf, spill_cnt ; get the spill count
-            ldn   rf        
+            ldn   rf
             lbz   ek_exit         ; if no spill files, just exit
 
             load  rf, spill_msg
             call  set_status
             call  prt_status
-            
+
             call  teardown_spill  ; delete spill files
 
-            ;------ Disable raw mode     
+            ;------ Disable raw mode
 ek_exit:    ghi   re              ; get Elf/OS serial byte
             ori   $01             ; set the echo bit
             phi   re              ; restore serial byte with echo on
@@ -168,36 +169,36 @@ ek_exit:    ghi   re              ; get Elf/OS serial byte
             endp
 
 
-            
+
             ;*******************************************************************
             ;***                    Screen Utilities                         ***
             ;*******************************************************************
-                    
+
             ;-------------------------------------------------------
             ; Name: set_row_offset
             ;
-            ; Save the text buffer line index for the top row of  
+            ; Save the text buffer line index for the top row of
             ; the current screen in memory.
-            ; 
+            ;
             ; Parameters:
             ;   r8 - text buffer line index for top row
             ; Uses:
             ;   rf - buffer pointer
             ; Returns: (None)
-            ;-------------------------------------------------------            
+            ;-------------------------------------------------------
             proc  set_row_offset
             push  rf
-          
+
             load  rf, row_offset  ; top line index
             ghi   r8              ; get high index byte
-            str   rf            
+            str   rf
             inc   rf              ; point to next byte
             glo   r8              ; get low index byte
             str   rf              ; save as top line index
 
             load  rf, e_state     ; set refresh bit
             ldn   rf              ; get editor state byte
-            ori   REFRESH_BIT     
+            ori   REFRESH_BIT
             str   rf
 
             pop   rf
@@ -209,19 +210,19 @@ ek_exit:    ghi   re              ; get Elf/OS serial byte
             ;
             ; Get the text buffer line index for the top row of
             ; the current screen display.
-            ; 
+            ;
             ; Parameters: (None)
             ; Uses:
             ;   rf - buffer pointer
             ; Returns: (None)
             ;   r8 - text buffer line index for top row
-            ;-------------------------------------------------------            
+            ;-------------------------------------------------------
             proc  get_row_offset
             push  rf
 
             load  rf, row_offset  ; top line index
             lda   rf              ; get high index byte
-            phi   r8            
+            phi   r8
             lda   rf              ; get low index byte
             plo   r8              ; r8 has line index for top row
 
@@ -232,9 +233,9 @@ ek_exit:    ghi   re              ; get Elf/OS serial byte
             ;-------------------------------------------------------
             ; Name: set_col_offset
             ;
-            ; Save the column offset index from the left of the 
+            ; Save the column offset index from the left of the
             ; the current screen in memory.
-            ; 
+            ;
             ; Parameters:
             ;   rb.0 - character position
             ;   rc.1 - column offset index
@@ -242,23 +243,23 @@ ek_exit:    ghi   re              ; get Elf/OS serial byte
             ;   rf - buffer pointer
             ; Returns:
             ;   rc.1 - column offset index
-            ;-------------------------------------------------------            
+            ;-------------------------------------------------------
             proc  set_col_offset
             push  rf
 
             load  rf, size_w      ; window width value
             ldn   rf              ; get width
-            smi   1               ; subtract one for one based index  
+            smi   1               ; subtract one for one based index
             str   r2              ; save at M(X)
             glo   rb              ; get char position
-            sm                    ; subract width from character position 
+            sm                    ; subract width from character position
             lbdf  set_off         ; if positive, new offset is difference
             ldi   0               ; if negative, set to 0
-set_off:    str   r2              ; save in M(X)            
+set_off:    str   r2              ; save in M(X)
             load  rf, col_offset  ; top line index
             ghi   rc              ; get current offset
             sm                    ; did it change?
-            lbz   so_exit         ; if no change, just exit   
+            lbz   so_exit         ; if no change, just exit
             ldx                   ; get offset
             phi   rc              ; set col offset
             str   rf              ; save in memory
@@ -275,37 +276,37 @@ so_exit:    pop   rf
             ;
             ; Get the text buffer line index for the top row of
             ; the current screen display.
-            ; 
+            ;
             ; Parameters: (None)
             ; Uses:
             ;   rf - buffer pointer
             ; Returns: (None)
             ;   rc.1 - column offset for current screen
-            ;-------------------------------------------------------            
+            ;-------------------------------------------------------
             proc  get_col_offset
             push  rf
 
             load  rf, col_offset  ; column offset index
             lda   rf              ; get column byte
-            phi   rc            
+            phi   rc
 
             pop   rf
             return
             endp
-                          
-            
+
+
             ;-------------------------------------------------------
             ; Name: set_num_lines
             ;
-            ; Set the number of rows to the number of lines 
+            ; Set the number of rows to the number of lines
             ; in the text buffer
-            ; 
-            ; Parameters: 
+            ;
+            ; Parameters:
             ;   r8 - line maximum number from find_eob
             ; Uses:
             ;   rf - buffer pointer
             ; Returns: (None)
-            ;-------------------------------------------------------            
+            ;-------------------------------------------------------
             proc  set_num_lines
             push  rf
 
@@ -314,7 +315,7 @@ so_exit:    pop   rf
             str   rf
             inc   rf
             glo   r8
-            str   rf  
+            str   rf
             pop   rf
             return
             endp
@@ -324,13 +325,13 @@ so_exit:    pop   rf
             ; Name: get_num_lines
             ;
             ; Get the maximum number of lines from memory
-            ; 
-            ; Parameters: (None) 
+            ;
+            ; Parameters: (None)
             ; Uses:
             ;   rf - buffer pointer
-            ; Returns: 
+            ; Returns:
             ;   r9 - current line maximum (line limit)
-            ;-------------------------------------------------------            
+            ;-------------------------------------------------------
             proc  get_num_lines
             push  rf
 
@@ -342,18 +343,18 @@ so_exit:    pop   rf
             pop   rf
             return
             endp
-            
+
             ;-------------------------------------------------------
             ; Name: inc_num_lines
             ;
             ; Increment the maximum number of lines in memory
-            ; 
-            ; Parameters: (None) 
+            ;
+            ; Parameters: (None)
             ; Uses:
             ;   rf - buffer pointer
-            ; Returns: 
+            ; Returns:
             ;   r9 - maximum number of lines (incremented)
-            ;-------------------------------------------------------            
+            ;-------------------------------------------------------
             proc  inc_num_lines
             push  rf
 
@@ -366,7 +367,7 @@ so_exit:    pop   rf
             glo   r9              ; save low byte of new count
             str   rf
             dec   rf              ; back up rf to high byte
-            ghi   r9  
+            ghi   r9
             str   rf              ; save high byte of new count
 
             pop   rf
@@ -377,13 +378,13 @@ so_exit:    pop   rf
             ; Name: dec_num_lines
             ;
             ; Decrement the maximum number of lines in memory
-            ; 
-            ; Parameters: (None) 
+            ;
+            ; Parameters: (None)
             ; Uses:
             ;   rf - buffer pointer
-            ; Returns: 
+            ; Returns:
             ;   r9 - maximum number of lines (decremented)
-            ;-------------------------------------------------------            
+            ;-------------------------------------------------------
             proc  dec_num_lines
             push  rf
 
@@ -392,17 +393,17 @@ so_exit:    pop   rf
             phi   r9
             ldn   rf
             plo   r9
-            
+
             ghi   r9              ; check for zero
             lbnz  dnl_cont        ; if non zero continue
             glo   r9
             lbz   dnl_exit        ; if zero, don't decrement further
-            
+
 dnl_cont:   dec   r9              ; decrease count
             glo   r9              ; save low byte of new count
             str   rf
             dec   rf              ; back up rf to high byte
-            ghi   r9  
+            ghi   r9
             str   rf              ; save high byte of new count
 
 dnl_exit:   pop   rf
@@ -413,16 +414,16 @@ dnl_exit:   pop   rf
             ; Name: is_eof
             ;
             ; Determine if line index points to the end of file
-            ; 
+            ;
             ; Parameters:
             ;   r8 - current line index
             ; Uses:
             ;   rf - buffer pointer
-            ; Returns: 
+            ; Returns:
             ;   DF = 1, current line at end of file
             ;   DF = 0, current line within file
             ;   r9 - number of lines above eof
-            ;-------------------------------------------------------            
+            ;-------------------------------------------------------
             proc  is_eof
             push  rf
             load  rf, num_lines   ; point to maximum line value
@@ -431,46 +432,46 @@ dnl_exit:   pop   rf
             phi   r9
             lda   rf              ; get low byte of maximum line value
             plo   r9              ; r9 has maximum line value (eof)
-            
-            sub16 r9,r8           ; subtract current line from maximum number 
+
+            sub16 r9,r8           ; subtract current line from maximum number
             lbnf  eof_true        ; if negative, somehow went beyond eof
             ghi   r9              ; check difference for zero
             lbnz  eof_false       ; non-zero means current line within file
             glo   r9
             lbnz  eof_false
-eof_true:   stc                   ; if zero, current line at the end of file 
-            lbr   eof_exit 
-            
-eof_false:  clc 
+eof_true:   stc                   ; if zero, current line at the end of file
+            lbr   eof_exit
+
+eof_false:  clc
 eof_exit:   pop   rf
             return
             endp
-            
+
             ;-------------------------------------------------------
             ; Name: clear_screen
             ;
-            ; Send the ANSI sequences to clear the screen and 
+            ; Send the ANSI sequences to clear the screen and
             ; home the cursor
-            ; 
+            ;
             ; Parameters: (None)
             ; Uses: (None)
             ; Returns: (None)
-            ;-------------------------------------------------------            
+            ;-------------------------------------------------------
             proc  clear_screen
             call  o_inmsg
               db 27,'[2J',0           ; erase display
             call  o_inmsg
               db 27,'[H',0            ; home cursor
             return
-            endp 
+            endp
 
             ;-------------------------------------------------------
             ; Name: found_screen
             ;
-            ; Calculate the row offset and column offset for 
+            ; Calculate the row offset and column offset for
             ; the screen after a string is found.
-            ; 
-            ; Parameters: 
+            ;
+            ; Parameters:
             ;   rd - target string found
             ;   r8 - current row
             ; Uses:
@@ -478,29 +479,29 @@ eof_exit:   pop   rf
             ;   r9 - row offset value
             ;   rc - screen rows
             ;   rc.0 - counter
-            ; Returns: 
+            ; Returns:
             ;   rc.1 - column offset
-            ;   rb.1 - line size 
-            ;   rb.0 - character position 
+            ;   rb.1 - line size
+            ;   rb.0 - character position
             ;   r7.1 - updated cursor y position
-            ;   r7.0 - updated cursor x position 
-            ;-------------------------------------------------------            
+            ;   r7.0 - updated cursor x position
+            ;-------------------------------------------------------
             proc  found_screen
             push  rf              ; save registers used
             push  rd
             push  r9
 
-            load  rf, size_w      ; screen width 
+            load  rf, size_w      ; screen width
             ldn   rf              ; get byte value
             smi   1               ; subtract one for zero index
             plo   rc              ; save width
-            phi   r9              ; also save width in r9.1 as default 
+            phi   r9              ; also save width in r9.1 as default
 
 ms_subt:    lda   rd              ; subtract length of target string
             lbz   ms_clmn         ; calculate column offset when done
             dec   rc              ; subtract length from width
-            lbr   ms_subt  
-            
+            lbr   ms_subt
+
 ms_clmn:    glo   rb              ; get current character position
             str   r2              ; save in M(X) for arithmetic
             plo   r9              ; save in r9.0 to restore
@@ -517,37 +518,37 @@ ms_nocoff:  ldi   0
 ms_coff:    load  rf, col_offset  ; top line index
             glo   rd              ; get calculated column offset
             str   rf              ; save as new column offset
-                  
+
             ldi   0               ; set row offset to zero initially
-            phi   r9            
+            phi   r9
             plo   r9
 
             ldi   0               ; set high byte of counter to zero
             phi   rc
-              
+
             load  rf, size_h      ; height value
             ldn   rf              ; get byte value
             smi   1               ; subtract one for zero index
             plo   rc              ; save bottom line index
-  
-            
-            copy  r8, rd          ; copy current line to remaining line 
+
+
+            copy  r8, rd          ; copy current line to remaining line
 ms_subrow:  sub16 rd, rc          ; compare remaining line to screen width
             lbnf  ms_done         ; if remaining line < screen height, we are done
             add16 r9, rc          ; adjust row offset by screen height
             lbr   ms_subrow       ; keep going until done
-            
+
 ms_done:    load  rf, row_offset  ; save new row offset in r9
             ghi   r9              ; get high row offset byte
-            str   rf            
+            str   rf
             inc   rf              ; point to next byte
             glo   r9              ; get low row offset byte
             str   rf              ; save as top line index
 
-            load  rf, col_offset  
+            load  rf, col_offset
             ldn   rf              ; get calculated column offset
             phi   rc              ; set rc.1 to new column offset
-            
+
             call  find_line       ; get the current line
             ldn   ra              ; get size of current line
             smi   2               ; adjust for one past last character
@@ -555,42 +556,42 @@ ms_done:    load  rf, row_offset  ; save new row offset in r9
             ldi   0               ; if negative, set length to zero
 ms_size:    phi   rb              ; set rb.1 to new size
             call  put_line_buffer ; put current line in line buffer
-            
+
             call  set_cursor      ; adjust the cursor position
             pop   r9              ; restore registers used
             pop   rd
             pop   rf
             return
             endp
-            
+
             ;-------------------------------------------------------
             ; Name: refresh_screen
             ;
             ; Send the ANSI sequences and text to refresh the screen,
-            ; from the row in rf_top down, or all of it if rf_top is 
+            ; from the row in rf_top down, or all of it if rf_top is
             ; zero.  rf_top is set back to zero.
             ;
-            ; Each row is written over what is on the screen and 
-            ; anything left after it is erased, as erasing the row 
-            ; first makes it flicker.  A line is only written as far 
+            ; Each row is written over what is on the screen and
+            ; anything left after it is erased, as erasing the row
+            ; first makes it flicker.  A line is only written as far
             ; as the right edge of the screen.
-            ; 
+            ;
             ; Parameters: (None)
-            ; Uses: 
+            ; Uses:
             ;   rd.0 - character counter
             ;   rd.1 - characters past the edge, $FF if row not filled
             ;   rc.0 - line counter
             ;   r9.0 - window width
             ;   r9.1 - first row to refresh
             ; Returns: (None)
-            ;-------------------------------------------------------            
+            ;-------------------------------------------------------
             proc  refresh_screen
             push  rf
             push  rd
             push  r9
 
             call  o_inmsg
-              db 27,'[?25l',0     ; hide cursor        
+              db 27,'[?25l',0     ; hide cursor
 
             load  rf, rf_top      ; get first row to refresh
             ldn   rf
@@ -602,9 +603,9 @@ ms_size:    phi   rb              ; set rb.1 to new size
             ldi   1               ; zero means all, beginning at row one
             phi   r9
 
-rf_row:     call  getcurln          
+rf_row:     call  getcurln
             push  r8              ; save current line for later
-            
+
 rf_find:    call  get_row_offset  ; set the current line for the top row
             ghi   r9              ; move down to first row to refresh
             plo   rd
@@ -614,7 +615,7 @@ rf_down:    glo   rd
             plo   rd
             inc   r8
             lbr   rf_down
-            
+
 rf_line:    call  find_line       ; set r8 and ra for first line in text buffer
             lbnf  rf_found
             ghi   r9              ; if there is no such line, refresh all rows
@@ -647,7 +648,7 @@ rf_found:   call  window_width    ; get the window width in rc.0
             pop   r7
 
             call  get_col_offset  ; get the column offset into rc.1
-            
+
 prt_lines:  ghi   rc              ; get column offset
             adi   2               ; add two for the CRLF at eol
             str   r2              ; save column offset +2  into M(X)
@@ -655,7 +656,7 @@ prt_lines:  ghi   rc              ; get column offset
             lbz   rf_eob          ; if we hit the end of buffer we are done
             sm                    ; subtract column offset +2 from line size
             lbnf  ln_skp          ; if line size - (column offset +2) < 0, skip line
-            
+
             plo   rd              ; set up character counter with difference
             inc   ra              ; move past size to text
             ghi   rc              ; get column offset
@@ -666,11 +667,11 @@ prt_lines:  ghi   rc              ; get column offset
             ghi   ra              ; add carry flag into high byte
             adci  0
             phi   ra              ; ra now points to first character on-screen
-            
+
             glo   r9              ; get window width
             str   r2              ; save in M(X)
             glo   rd              ; get characters in line
-            sm                    ; subtract width from characters 
+            sm                    ; subtract width from characters
             lbdf  ln_wide         ; if line reaches the edge, nothing to erase
             ldi   $FF             ; otherwise flag row as not filled
             phi   rd
@@ -678,15 +679,15 @@ prt_lines:  ghi   rc              ; get column offset
 ln_wide:    phi   rd              ; save count of characters past the edge
             glo   r9              ; and only print up to the edge
             plo   rd
-              
+
 ln_lp:      glo   rd              ; check counter for end of line
-            lbz   ln_end          
+            lbz   ln_end
             smi   1               ; count down characters in line
             plo   rd
             lda   ra              ; get character
             call  o_type          ; print on screen
-            lbr   ln_lp           ; keep going for all characters on screen  
-            
+            lbr   ln_lp           ; keep going for all characters on screen
+
 ln_end:     ghi   rd              ; check for row not filled
             xri   $FF
             lbz   ln_erase
@@ -702,13 +703,13 @@ ln_end:     ghi   rd              ; check for row not filled
 
 ln_erase:   call  o_inmsg
               db 27,'[K',0        ; erase rest of the row
-              
+
 ln_crlf:    inc   ra              ; move past CRLF to next line
             inc   ra
             call  o_inmsg         ; move to next row
               db 13,10,0
             lbr   ln_cont         ; continue  on
-            
+
 ln_skp:     lda   ra              ; ra points to size, so get size
             str   r2              ; save in M(X)
             glo   ra              ; add size to ra to advance to next line
@@ -717,7 +718,7 @@ ln_skp:     lda   ra              ; ra points to size, so get size
             ghi   ra              ; add carry into high byte
             adci  0
             phi   ra              ; update high byte
-            
+
             call  o_inmsg         ; erase the row and move to next row
               db 27,'[K',10,13,0
 
@@ -725,7 +726,7 @@ ln_cont:    inc   r8              ; add one to current line value
 
             dec   rc              ; count down
             glo   rc              ; check counter
-            lbnz  prt_lines       ; if zero done with text buffer  
+            lbnz  prt_lines       ; if zero done with text buffer
             lbr   rf_done
 
 rf_eob:     call  o_inmsg
@@ -733,14 +734,14 @@ rf_eob:     call  o_inmsg
 
 rf_done:    call  get_cursor      ; restore cursor
             call  move_cursor     ; position cursor
-                
+
             call  o_inmsg
-              db 27,'[?25h',0     ; show cursor        
+              db 27,'[?25h',0     ; show cursor
 
             pop   r8              ; restore current line
             call  setcurln
-            call  find_line       ; point ra to current line in buffer 
-            lbdf  rf_err          ; if not found, set to zero 
+            call  find_line       ; point ra to current line in buffer
+            lbdf  rf_err          ; if not found, set to zero
             ldn   ra              ; get line size
             smi   2               ; subtract 2 for CRLF
             lbdf  rf_size         ; if positive, set length
@@ -749,14 +750,14 @@ rf_size:    phi   rb              ; save line size in rb.1
             load  rf, e_state     ; get editor state and clear refresh flag
             ldn   rf
             ani   REFRESH_MASK    ; clear refresh bit and status bit
-            str   rf              ; save back in memory 
+            str   rf              ; save back in memory
 
             pop   r9              ; restore registers used
             pop   rd
             pop   rf
             return
-            endp 
+            endp
 
 #ifdef KILO_DEBUG
-#include kilo_dbg.inc 
+#include kilo_dbg.inc
 #endif
